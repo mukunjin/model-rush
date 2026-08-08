@@ -1,6 +1,9 @@
 // Model Rush - 3D 数据中心渲染
 const Datacenter = {
   gpuBlocks: [], // {mesh, type, row, col, training}
+  gpuPickables: [],
+  gpuPickablesDirty: true,
+  rackAssets: null,
   powerRoom: null,
   coolingTower: null,
   pipeLines: [],
@@ -458,11 +461,22 @@ const Datacenter = {
   },
 
   expand() {
-    this.ROWS += 2;
-    this.COLS += 4;
+    const before = this.ROWS * this.COLS;
+    this.ROWS += CONFIG.DATACENTER_EXPAND_ROWS;
+    this.COLS += CONFIG.DATACENTER_EXPAND_COLS;
     this.updatePlatform();
     this.updateGround();
-    Game.addLog('数据中心已扩容至 ' + this.ROWS + 'x' + this.COLS + ' (' + (this.ROWS * this.COLS) + ' 机架)');
+    const added = this.ROWS * this.COLS - before;
+    Game.addLog('数据中心已扩容至 ' + this.ROWS + 'x' + this.COLS + '（新增 ' + added + ' 个 GPU 位）');
+    return { addedSlots: added, rows: this.ROWS, cols: this.COLS };
+  },
+
+  getExpansionPreview() {
+    const currentSlots = this.ROWS * this.COLS;
+    const rows = this.ROWS + CONFIG.DATACENTER_EXPAND_ROWS;
+    const cols = this.COLS + CONFIG.DATACENTER_EXPAND_COLS;
+    const slots = rows * cols;
+    return { rows, cols, currentSlots, slots, addedSlots: slots - currentSlots };
   },
 
   updateGround() {
@@ -484,110 +498,37 @@ const Datacenter = {
     this.createPipes();
   },
 
-  // 创建单个GPU机架（完整建模，每机架独立材质以支持单独训练脉冲）
+  // 创建单个 GPU 机架。机架数量可达数千，使用紧凑的双网格表示，避免完整建模带来的大量 draw call。
   createRack(gpuType) {
     const gpu = CONFIG.GPUS[gpuType];
-    const color = gpu.color;
     const s = this.RACK_SIZE;
     const h = this.RACK_HEIGHT;
-
-    // 每机架独立材质（避免共享材质导致训练标记误伤同批所有GPU）
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.3, metalness: 0.9 });
-    const panelMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.7 });
-    const gpuBladeMat = new THREE.MeshStandardMaterial({ color, roughness: 0.25, metalness: 0.6, emissive: color, emissiveIntensity: 0.08 });
-    const ventMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1.0, metalness: 0.1 });
-    const ledMat = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.8 });
-
-    // 共享几何体（节省内存）
-    const baseGeo = new THREE.BoxGeometry(s * 0.95, 0.03, s * 0.95);
-    const postGeo = new THREE.CylinderGeometry(0.012, 0.012, h, 6);
-    const sideGeo = new THREE.BoxGeometry(0.02, h * 0.85, s * 0.85);
-    const backGeo = new THREE.BoxGeometry(s * 0.85, h * 0.85, 0.02);
-    const bladeGeo = new THREE.BoxGeometry(s * 0.78, h * 0.15, s * 0.75);
-    const ventGeo = new THREE.BoxGeometry(s * 0.55, 0.006, 0.01);
-    const ledGeo = new THREE.SphereGeometry(0.015, 4, 4);
-    const topBeamGeo = new THREE.BoxGeometry(s * 0.9, 0.025, 0.04);
-    const topBeamZGeo = new THREE.BoxGeometry(0.04, 0.025, s * 0.9);
-    const topGeo = new THREE.BoxGeometry(s * 0.9, 0.02, s * 0.9);
-
-    const postRadius = 0.012;
-    const corners = [
-      [-s/2 + postRadius, 0, -s/2 + postRadius],
-      [s/2 - postRadius, 0, -s/2 + postRadius],
-      [-s/2 + postRadius, 0, s/2 - postRadius],
-      [s/2 - postRadius, 0, s/2 - postRadius]
-    ];
-    const bladeCount = 4;
-    const bladeGap = (h * 0.85) / bladeCount;
-    const bladeStartY = h * 0.12;
-
-    const rackGroup = new THREE.Group();
-    const bladeMeshes = [];
-
-    // 底座
-    const base = new THREE.Mesh(baseGeo, frameMat);
-    base.position.y = 0.015;
-    rackGroup.add(base);
-
-    // 四角立柱
-    for (const [cx, cy, cz] of corners) {
-      const post = new THREE.Mesh(postGeo, frameMat);
-      post.position.set(cx, h/2, cz);
-      rackGroup.add(post);
+    if (!this.rackAssets) {
+      this.rackAssets = {
+        bodyGeo: new THREE.BoxGeometry(s * 0.92, h, s * 0.82),
+        faceGeo: new THREE.BoxGeometry(s * 0.70, h * 0.72, 0.012),
+        bodyMat: new THREE.MeshStandardMaterial({ color: 0x30303a, roughness: 0.55, metalness: 0.65 })
+      };
     }
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(this.rackAssets.bodyGeo, this.rackAssets.bodyMat);
+    body.position.y = h / 2;
+    group.add(body);
 
-    // 侧面板
-    const sideL = new THREE.Mesh(sideGeo, panelMat);
-    sideL.position.set(-s/2 + 0.01, h * 0.48, 0);
-    rackGroup.add(sideL);
-    const sideR = new THREE.Mesh(sideGeo, panelMat);
-    sideR.position.set(s/2 - 0.01, h * 0.48, 0);
-    rackGroup.add(sideR);
+    // 状态面板保留独立材质，以便训练时只点亮被分配的机架。
+    const statusMat = new THREE.MeshStandardMaterial({ color: gpu.color, roughness: 0.3, metalness: 0.55, emissive: gpu.color, emissiveIntensity: 0.08 });
+    const status = new THREE.Mesh(this.rackAssets.faceGeo, statusMat);
+    status.position.set(0, h * 0.50, s * 0.42);
+    group.add(status);
+    return { group, blades: [status] };
+  },
 
-    // 后面板
-    const back = new THREE.Mesh(backGeo, panelMat);
-    back.position.set(0, h * 0.48, -s/2 + 0.01);
-    rackGroup.add(back);
-
-    // GPU 刀片（4层）
-    for (let i = 0; i < bladeCount; i++) {
-      const by = bladeStartY + i * bladeGap;
-      const blade = new THREE.Mesh(bladeGeo, gpuBladeMat);
-      blade.position.set(0, by, 0);
-      rackGroup.add(blade);
-      bladeMeshes.push(blade);
-
-      // 通风槽
-      for (let v = 0; v < 3; v++) {
-        const vent = new THREE.Mesh(ventGeo, ventMat);
-        vent.position.set(0, by + (v - 1) * h * 0.033, s/2 - 0.005);
-        rackGroup.add(vent);
-      }
-
-      // 指示灯
-      const led = new THREE.Mesh(ledGeo, ledMat);
-      led.position.set(s * 0.30, by, s/2 + 0.01);
-      rackGroup.add(led);
+  getPickableGPUMeshes() {
+    if (this.gpuPickablesDirty) {
+      this.gpuPickables = this.gpuBlocks.flatMap(block => block.blades);
+      this.gpuPickablesDirty = false;
     }
-
-    // 顶部横梁
-    for (let zz = -1; zz <= 1; zz += 2) {
-      const beam = new THREE.Mesh(topBeamGeo, frameMat);
-      beam.position.set(0, h - 0.015, zz * s * 0.35);
-      rackGroup.add(beam);
-    }
-    for (let xx = -1; xx <= 1; xx += 2) {
-      const beam = new THREE.Mesh(topBeamZGeo, frameMat);
-      beam.position.set(xx * s * 0.35, h - 0.015, 0);
-      rackGroup.add(beam);
-    }
-
-    // 顶部面板
-    const topPanel = new THREE.Mesh(topGeo, panelMat);
-    topPanel.position.y = h - 0.01;
-    rackGroup.add(topPanel);
-
-    return { group: rackGroup, blades: bladeMeshes };
+    return this.gpuPickables;
   },
 
   addGPUs(gpuType, count) {
@@ -625,6 +566,7 @@ const Datacenter = {
           col,
           training: false
         });
+        this.gpuPickablesDirty = true;
 
         added++;
       }
@@ -642,12 +584,11 @@ const Datacenter = {
     }
     for (const block of toRemove) {
       Scene.scene.remove(block.group);
-      block.group.traverse(child => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
-      });
+      // 机架主体几何和材质全局复用，只释放每个机架独有的状态面板材质。
+      for (const blade of block.blades) blade.material.dispose();
     }
     this.gpuBlocks = this.gpuBlocks.filter(b => !toRemove.includes(b));
+    this.gpuPickablesDirty = true;
   },
 
   markTrainingGPUs(allocation) {
@@ -722,15 +663,17 @@ const Datacenter = {
     // 清除现有GPU
     for (const block of this.gpuBlocks) {
       Scene.scene.remove(block.group);
+      for (const blade of block.blades) blade.material.dispose();
     }
     this.gpuBlocks = [];
+    this.gpuPickablesDirty = true;
     // 重建
     for (const bd of blockData) {
       this.addOneGPUBlock(bd.type, bd.row, bd.col, bd.training);
     }
   },
 
-  // 添加单个GPU方块（不更新库存，用于存档恢复，使用与正常购买一致的完整建模）
+  // 添加单个GPU机架（不更新库存，用于存档恢复，使用与正常购买一致的紧凑建模）
   addOneGPUBlock(gpuType, row, col, training) {
     const x = this.getX(col);
     const z = this.getZ(row);
@@ -744,5 +687,6 @@ const Datacenter = {
     }
     Scene.scene.add(rack.group);
     this.gpuBlocks.push({ group: rack.group, blades: rack.blades, type: gpuType, row, col, training });
+    this.gpuPickablesDirty = true;
   }
 };

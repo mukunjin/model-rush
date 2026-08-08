@@ -19,7 +19,8 @@ const Game = {
     coolingCapacityMW: CONFIG.INITIAL_COOLING_CAPACITY_MW,
 
     // 训练
-    activeTraining: null, // 当前训练任务
+    activeTraining: null, // 兼容旧界面：当前首个训练任务
+    activeTrainings: [], // 并行训练任务
     deployedModels: [], // 已部署模型 [{name, score, rank, openSource, scale, ...}]
     completedModels: [], // 已完成的模型列表
 
@@ -113,7 +114,7 @@ const Game = {
     Economy.settleDaily();
 
     // 训练进度
-    if (this.state.activeTraining) {
+    if (this.state.activeTrainings.length > 0) {
       Training.advanceTrainingDay();
     }
 
@@ -207,15 +208,45 @@ const Game = {
     return Object.values(alloc).reduce((a, b) => a + b, 0);
   },
 
+  getActiveTrainings() {
+    if (!Array.isArray(this.state.activeTrainings)) this.state.activeTrainings = this.state.activeTraining ? [this.state.activeTraining] : [];
+    return this.state.activeTrainings;
+  },
+
+  syncPrimaryTraining() {
+    this.state.activeTraining = this.getActiveTrainings()[0] || null;
+  },
+
+  getTrainingGPUAllocation(includePaused = true) {
+    const allocation = {};
+    for (const training of this.getActiveTrainings()) {
+      if (!includePaused && training.paused) continue;
+      for (const [type, count] of Object.entries(training.gpuAllocation || {})) {
+        if (CONFIG.GPUS[type]) allocation[type] = (allocation[type] || 0) + count;
+      }
+    }
+    return allocation;
+  },
+
+  getModelMinimumInferenceH100(model) {
+    return recommendedInferenceGPUs(model.params || 0);
+  },
+
+  // 混合型号按 H100 等效算力汇率校验；部署不能低于模型最低推理需求。
+  meetsModelInferenceMinimum(model, allocation) {
+    return effectiveInferenceGPUs(allocation) >= this.getModelMinimumInferenceH100(model);
+  },
+
   // 可用于训练的GPU数（总数 - 推理占用）
   getAvailableGPUs() {
-    return Math.max(0, this.state.gpuTotal - this.getInferenceGPUs());
+    const training = Object.values(this.getTrainingGPUAllocation()).reduce((a, b) => a + b, 0);
+    return Math.max(0, this.state.gpuTotal - this.getInferenceGPUs() - training);
   },
 
   // GPU 实际功耗（训练中GPU满载，推理GPU中载，闲置GPU低功耗）
   getGPUActualPowerMW() {
     let total = 0;
-    const trainingAlloc = this.state.activeTraining ? (this.state.activeTraining.gpuAllocation || {}) : {};
+    const trainingAlloc = this.getTrainingGPUAllocation(false);
     const inferenceAlloc = this.getInferenceGPUAllocation();
     // 兼容旧存档的 _legacy 分配
     const legacyTraining = trainingAlloc._legacy || 0;

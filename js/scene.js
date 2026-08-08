@@ -14,6 +14,9 @@ const Scene = {
   raycaster: new THREE.Raycaster(),
   mouse: new THREE.Vector2(),
   hoveredObject: null,
+  lastHoverCheck: 0,
+  lastRenderTime: 0,
+  maxRenderFPS: 45,
 
   init() {
     this.container = document.getElementById('scene-container');
@@ -28,11 +31,12 @@ const Scene = {
     this.camera = new THREE.PerspectiveCamera(45, w / h, 0.5, 200);
     this.updateCameraPosition();
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // 场景以大量机架为主：适度限制像素比和关闭抗锯齿，优先保持操作流畅。
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setSize(w, h);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.style.touchAction = 'none'; // 移动端手势由JS处理
     this.container.appendChild(this.renderer.domElement);
 
@@ -57,7 +61,7 @@ const Scene = {
       this.raycaster.setFromCamera(this.mouse, this.camera);
 
       // 检查GPU方块
-      const gpuMeshes = Datacenter.gpuBlocks.flatMap(b => b.blades);
+      const gpuMeshes = Datacenter.getPickableGPUMeshes();
       const intersects = this.raycaster.intersectObjects(gpuMeshes, false);
 
       if (intersects.length > 0) {
@@ -93,13 +97,16 @@ const Scene = {
     // 悬停效果
     canvas.addEventListener('mousemove', (e) => {
       if (this.isDragging) return;
+      const now = performance.now();
+      if (now - this.lastHoverCheck < 80) return; // 限制高频鼠标移动触发的射线检测
+      this.lastHoverCheck = now;
       const rect = canvas.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       this.raycaster.setFromCamera(this.mouse, this.camera);
 
-      const gpuMeshes = Datacenter.gpuBlocks.flatMap(b => b.blades);
+      const gpuMeshes = Datacenter.getPickableGPUMeshes();
       const intersects = this.raycaster.intersectObjects(gpuMeshes, false);
 
       if (intersects.length > 0) {
@@ -258,8 +265,8 @@ const Scene = {
     const sun = new THREE.DirectionalLight(0xffffff, 0.8);
     sun.position.set(20, 30, 10);
     sun.castShadow = true;
-    sun.shadow.mapSize.width = 2048;
-    sun.shadow.mapSize.height = 2048;
+    sun.shadow.mapSize.width = 1024;
+    sun.shadow.mapSize.height = 1024;
     sun.shadow.camera.near = 0.5;
     sun.shadow.camera.far = 100;
     sun.shadow.camera.left = -25;
@@ -292,6 +299,9 @@ const Scene = {
 
   render() {
     if (this.renderer && this.scene && this.camera) {
+      const now = performance.now();
+      if (now - this.lastRenderTime < 1000 / this.maxRenderFPS) return;
+      this.lastRenderTime = now;
       this.renderer.render(this.scene, this.camera);
     }
   },

@@ -11,7 +11,7 @@ const Economy = {
       const scaleKey = paramsToScaleKey(model.params || 0);
       const pricePerToken = CONFIG.API_PRICE_PER_TOKEN[scaleKey] || 3e-9;
       const dau = CONFIG.DAILY_ACTIVE_USERS[scaleKey] || 500000;
-      const openSourceMult = model.openSource ? 0 : 1;
+      const openSourceMult = this.getModelIncomeMultiplier(model);
       let incomeBonus = 1.0;
       if (model.techs && model.techs.includes('speculative')) {
         incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus;
@@ -75,6 +75,7 @@ const Economy = {
     let enterpriseIncome = 0;
 
     for (const model of s.deployedModels) {
+      if (!model.deployed) continue;
       enterpriseIncome += CONFIG.ENTERPRISE_BASE * (model.score / 50) * Game.getIncomeMultiplier();
     }
 
@@ -109,6 +110,16 @@ const Economy = {
     if (val >= 1e6) return (val / 1e6).toFixed(2) + 'M';
     if (val >= 1e3) return (val / 1e3).toFixed(1) + 'K';
     return val.toFixed(0);
+  },
+
+  // 开源模型仍可通过托管 API、企业支持和生态服务变现；默认收益低于闭源模型。
+  getModelIncomeMultiplier(model) {
+    if (!model.openSource) return 1;
+    let multiplier = CONFIG.OPEN_SOURCE_INCOME_MULTIPLIER;
+    if (model.techs && model.techs.includes('open_source_ecosystem')) {
+      multiplier *= 1 + CONFIG.TECH_RESEARCH.open_source_ecosystem.openSourceIncomeBonus;
+    }
+    return multiplier;
   },
 
   triggerBankruptcy() {
@@ -256,7 +267,7 @@ const Economy = {
 
     const current = s.gpuInventory[gpuType] || 0;
     // 计算被占用的GPU数量（训练 + 推理）
-    const trainingAlloc = s.activeTraining ? (s.activeTraining.gpuAllocation || {}) : {};
+    const trainingAlloc = Game.getTrainingGPUAllocation();
     const inferenceAlloc = Game.getInferenceGPUAllocation();
     const used = (trainingAlloc[gpuType] || 0) + (inferenceAlloc[gpuType] || 0);
     const available = Math.max(0, current - used);
@@ -290,8 +301,8 @@ const Economy = {
     }
     s.cash -= cost;
     s.datacenterExpands++;
-    Datacenter.expand();
-    Game.addLog('数据中心扩容 (Lv.' + s.datacenterExpands + '), 花费 $' + Economy.formatMoney(cost));
+    const expansion = Datacenter.expand();
+    Game.addLog('数据中心扩容 Lv.' + s.datacenterExpands + '：新增 ' + expansion.addedSlots + ' 个 GPU 位，花费 $' + Economy.formatMoney(cost));
     UI.update();
     return true;
   }

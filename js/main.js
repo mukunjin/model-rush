@@ -5,8 +5,21 @@ window.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('start-game-btn');
   const overlay = document.getElementById('startup-overlay');
   const continueSection = document.getElementById('continue-section');
-  const continueBtn = document.getElementById('continue-game-btn');
-  const saveInfo = document.getElementById('save-info');
+  const saveSlotsList = document.getElementById('save-slots-list');
+
+  function renderSaveSlots() {
+    const slots = SaveSystem.getSlots();
+    if (slots.length === 0) return;
+    saveSlotsList.innerHTML = '';
+    for (const slot of slots) {
+      const button = document.createElement('button');
+      button.className = 'modal-btn w-full text-left py-2';
+      button.textContent = slot.name + '｜第 ' + slot.day + ' 天｜$' + Economy.formatMoney(slot.cash) + '｜' + new Date(slot.timestamp).toLocaleString('zh-CN');
+      button.addEventListener('click', () => continueGame(slot.id));
+      saveSlotsList.appendChild(button);
+    }
+    continueSection.classList.remove('hidden');
+  }
 
   function validateName(name) {
     const trimmed = name.trim();
@@ -43,10 +56,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     Game.addLog(name + ' 成立! 初始资金 $' + Economy.formatMoney(CONFIG.INITIAL_CASH));
     Game.addLog('数据中心已就绪，供电 ' + CONFIG.INITIAL_POWER_CAPACITY_MW + 'MW');
+    SaveSystem.createSlot(name + ' · 第 1 天');
     UI.update();
   }
 
-  function continueGame() {
+  function continueGame(slotId) {
     overlay.style.display = 'none';
 
     // 先初始化场景和数据中心
@@ -67,7 +81,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     // 加载存档
-    const loaded = SaveSystem.load();
+    const loaded = SaveSystem.load(slotId);
     if (!loaded) {
       UI.toast('存档加载失败，开始新游戏');
       Game.state.companyName = '新公司';
@@ -81,25 +95,9 @@ window.addEventListener('DOMContentLoaded', () => {
     UI.update();
   }
 
-  // 检查是否有存档
-  try {
-    const raw = localStorage.getItem('model_rush_save');
-    if (raw) {
-      const data = JSON.parse(raw);
-      if (data && data.gameState && data.companyName) {
-        const saveDate = new Date(data.timestamp);
-        const saveDay = data.gameState.day || 1;
-        const saveCash = data.gameState.cash || 0;
-        saveInfo.textContent = data.companyName + ' | 第 ' + saveDay + ' 天 | $' + Economy.formatMoney(saveCash) + ' | ' + saveDate.toLocaleString('zh-CN');
-        continueSection.classList.remove('hidden');
-      }
-    }
-  } catch (e) {
-    // 存档损坏，忽略
-  }
+  renderSaveSlots();
 
   btn.addEventListener('click', startGame);
-  continueBtn.addEventListener('click', continueGame);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') startGame();
     else {

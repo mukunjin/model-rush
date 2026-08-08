@@ -32,8 +32,8 @@
       <div class="text-accent text-2xl font-bold tracking-wider mb-2">Model Rush</div>
       <div class="text-muted text-sm mb-6">AI 大模型训练模拟器</div>
       <div id="continue-section" class="mb-4 hidden">
-        <button id="continue-game-btn" class="modal-btn primary w-full py-2 mb-2">继续游戏</button>
-        <div class="text-xs text-muted" id="save-info"></div>
+        <div class="text-xs text-muted mb-2">选择要继续的存档</div>
+        <div id="save-slots-list" class="space-y-1 mb-2"></div>
         <div class="text-xs text-muted mt-2">或输入新公司名开始新游戏:</div>
       </div>
       <div class="text-left mb-4">
@@ -203,6 +203,7 @@
     <button onclick="Economy.fundraise()" class="action-btn" id="btn-fundraise">发起融资</button>
     <span class="text-muted mx-1">|</span>
     <button onclick="SaveSystem.save(false)" class="action-btn">保存游戏</button>
+    <button onclick="UI.showModal('save-manager')" class="action-btn">存档管理</button>
     <button onclick="UI.showDeleteConfirm()" class="action-btn text-danger hover:border-danger">删除存档</button>
   </div>
 

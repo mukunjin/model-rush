@@ -12,12 +12,35 @@ const Research = {
     return Array.isArray(this.state.unlocked) && this.state.unlocked.includes(techKey);
   },
 
+  getLevelInfo() {
+    const completed = this.state.unlocked.length;
+    let level = 1;
+    for (const [key, info] of Object.entries(CONFIG.RESEARCH_LEVELS)) {
+      if (completed >= info.requiredCompleted) level = Number(key);
+    }
+    const current = CONFIG.RESEARCH_LEVELS[level];
+    const next = CONFIG.RESEARCH_LEVELS[level + 1] || null;
+    return {
+      level,
+      name: current.name,
+      completed,
+      next,
+      progress: next ? Math.min(100, completed / next.requiredCompleted * 100) : 100
+    };
+  },
+
   // 检查是否可以开始研发某项技术
   canResearch(techKey) {
     if (this.isUnlocked(techKey)) return { ok: false, reason: '已解锁' };
     if (this.state.researching[techKey]) return { ok: false, reason: '已在研发中' };
     const tech = CONFIG.TECH_RESEARCH[techKey];
     if (!tech) return { ok: false, reason: '未知技术' };
+    const levelInfo = this.getLevelInfo();
+    const requiredLevel = tech.tier || 1;
+    if (levelInfo.level < requiredLevel) {
+      const required = CONFIG.RESEARCH_LEVELS[requiredLevel];
+      return { ok: false, reason: '研发等级不足：需要 Lv.' + requiredLevel + '（累计完成 ' + required.requiredCompleted + ' 项技术）', blockType: 'level' };
+    }
     // 检查前置依赖
     for (const dep of tech.deps) {
       if (!this.isUnlocked(dep)) {
@@ -43,6 +66,12 @@ const Research = {
     if (missingDeps.length > 0) {
       const names = missingDeps.map(d => CONFIG.TECH_RESEARCH[d]?.name || d).join(', ');
       return { type: 'deps', text: '需前置: ' + names };
+    }
+    const levelInfo = this.getLevelInfo();
+    const requiredLevel = tech.tier || 1;
+    if (levelInfo.level < requiredLevel) {
+      const required = CONFIG.RESEARCH_LEVELS[requiredLevel];
+      return { type: 'level', text: '需研发 Lv.' + requiredLevel + '（完成 ' + required.requiredCompleted + ' 项）' };
     }
     // 检查队列
     const maxConcurrent = 2 + Math.floor(Economy.getTotalResearchers() / 3);
