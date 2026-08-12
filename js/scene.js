@@ -321,14 +321,23 @@ const Scene = {
   },
 
   setupGrid() {
-    // 地基（紧贴平台，不无限延伸）
-    const { w, d } = Datacenter.getPlatformSize();
-    const groundSize = Math.max(w + 2, d + 2, 12);
-    const groundGeo = new THREE.PlaneGeometry(groundSize, groundSize);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x111118, roughness: 0.9, metalness: 0.1 });
+    // 无限大网格地面（位于最底层下方）
+    const gridSize = 1000; // 足够大，看起来无限延伸
+    const gridDivisions = 500; // 网格线密度
+
+    // 主网格（较粗的线）
+    const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x333344, 0x222233);
+    gridHelper.position.y = -0.1;
+    gridHelper.material.opacity = 0.6;
+    gridHelper.material.transparent = true;
+    this.scene.add(gridHelper);
+
+    // 地面平面（深色，接收阴影）
+    const groundGeo = new THREE.PlaneGeometry(gridSize, gridSize);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0f, roughness: 0.95, metalness: 0.05 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.05;
+    ground.position.y = -0.15;
     ground.receiveShadow = true;
     this.scene.add(ground);
     Datacenter.groundMesh = ground;
