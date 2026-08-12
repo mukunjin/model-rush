@@ -50,6 +50,17 @@ const UI = {
   },
 
   initPanelTabs() {
+    const panel = document.getElementById('right-panel');
+    const scrollPositions = {}; // 存储每个标签页的滚动位置
+    
+    // 监听滚动，保存当前位置
+    panel.addEventListener('scroll', () => {
+      const activeTab = document.querySelector('.panel-tab.active');
+      if (activeTab) {
+        scrollPositions[activeTab.dataset.tab] = panel.scrollTop;
+      }
+    });
+    
     document.querySelectorAll('.panel-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         const target = tab.dataset.tab;
@@ -57,6 +68,8 @@ const UI = {
         tab.classList.add('active');
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         document.querySelector('.tab-panel[data-tab="' + target + '"]').classList.add('active');
+        // 恢复该标签页的滚动位置，如果没有则从顶部开始
+        panel.scrollTop = scrollPositions[target] || 0;
       });
     });
   },
@@ -122,6 +135,14 @@ const UI = {
     document.getElementById('valuation').textContent = '$' + Economy.formatMoney(s.valuation);
     document.getElementById('day').textContent = s.day;
     if (s.speed === 0) document.getElementById('day').textContent = s.day + ' (暂停)';
+
+    // 算力显示
+    let totalTflops = 0;
+    for (const [key, count] of Object.entries(s.gpuInventory)) {
+      const gpu = CONFIG.GPUS[key];
+      if (gpu) totalTflops += count * gpu.tflops;
+    }
+    document.getElementById('tflops').textContent = totalTflops.toLocaleString();
 
     // 预览概览
     UI.updateOverview();
@@ -334,89 +355,128 @@ const UI = {
     const el = document.getElementById('products-list');
     if (!el) return;
     const s = Game.state;
-    const models = s.deployedModels.filter(model => model.deployed);
-    // 旧存档可能残留 deployed 标记；以实际是否在已部署列表为准，避免待部署模型被隐藏。
-    const pendingModels = s.completedModels.filter(model => !UI.isModelDeployed(model));
+    
+    try {
+      const models = s.deployedModels.filter(model => model.deployed);
+      // 旧存档可能残留 deployed 标记；以实际是否在已部署列表为准，避免待部署模型被隐藏。
+      const pendingModels = s.completedModels.filter(model => !UI.isModelDeployed(model));
 
-    if (models.length === 0 && pendingModels.length === 0) {
-      el.innerHTML = '<div class="text-muted italic">尚未部署任何模型。完成训练后选择GPU部署模型即可产生收入。</div>';
-      return;
-    }
-
-    let html = '';
-    if (pendingModels.length > 0) {
-      html += '<div class="text-muted uppercase tracking-wider mb-1">待部署模型</div>';
-      for (let i = 0; i < s.completedModels.length; i++) {
-        const model = s.completedModels[i];
-        if (UI.isModelDeployed(model)) continue;
-        const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
-        html += '<div class="border border-border rounded p-2 mb-2">' +
-          '<div class="flex justify-between items-center"><span class="font-bold text-sm">' + model.name + '</span><span class="font-mono" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span></div>' +
-          '<div class="text-xs text-muted mt-0.5">' + (model.label || formatParams(model.params)) + ' | ' + (model.openSource ? '开源' : '闭源') + '</div>' +
-          '<button onclick="UI.deployCompletedModel(' + i + ')" class="text-accent hover:text-white text-xs mt-2 px-2 py-1 rounded border border-accent/40 hover:bg-accent/20">手动部署</button>' +
-          '</div>';
+      if (models.length === 0 && pendingModels.length === 0) {
+        el.innerHTML = '<div class="text-muted italic">尚未部署任何模型。完成训练后选择GPU部署模型即可产生收入。</div>';
+        return;
       }
-      if (models.length > 0) html += '<div class="text-muted uppercase tracking-wider mb-1 mt-3">已部署模型</div>';
-    }
-    for (let i = 0; i < models.length; i++) {
-      const model = models[i];
-      const deployedIndex = s.deployedModels.indexOf(model);
-      const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
-      const label = model.label || formatParams(model.params) || model.scale || '--';
 
-      // 部署GPU信息
-      const deployGPUs = model.deploymentGPUs || {};
-      const deployTotal = Object.values(deployGPUs).reduce((a, b) => a + b, 0);
-      const deployEquiv = effectiveInferenceGPUs(deployGPUs);
-      const deployStr = Object.entries(deployGPUs).map(([k, v]) => k + '×' + v).join(', ') || '未分配';
+      let html = '';
+      if (pendingModels.length > 0) {
+        html += '<div class="text-muted uppercase tracking-wider mb-1">待部署模型</div>';
+        for (let i = 0; i < s.completedModels.length; i++) {
+          const model = s.completedModels[i];
+          if (UI.isModelDeployed(model)) continue;
+          const score = model.score || 0;
+          const scoreColor = score >= 70 ? '#00cc66' : score >= 50 ? '#e6a817' : '#e74c3c';
+          const label = model.label || formatParams(model.params) || model.scale || '--';
+          
+          html += '<div class="border border-border rounded p-2 mb-2">' +
+            '<div class="flex justify-between items-center"><span class="font-bold text-sm">' + (model.name || '未命名模型') + '</span><span class="font-mono text-base" style="color:' + scoreColor + '">' + score.toFixed(1) + '</span></div>' +
+            '<div class="text-xs text-muted mt-0.5">' + label + ' | ' + (model.openSource ? '开源' : '闭源') + '</div>';
+          
+          // 基准测试分项
+          if (model.benchmarkBreakdown) {
+            html += '<div class="grid grid-cols-2 gap-0.5 mt-1 text-xs">';
+            for (const [bk, val] of Object.entries(model.benchmarkBreakdown)) {
+              const bm = CONFIG.BENCHMARKS[bk];
+              if (bm) {
+                html += '<span class="text-muted">' + bm.name + '</span><span class="font-mono text-right">' + (val || 0).toFixed(1) + '</span>';
+              }
+            }
+            html += '</div>';
+          }
 
-      // 计算该模型的日收入
-      const scaleKey = paramsToScaleKey(model.params || 0);
-      const pricePerToken = CONFIG.API_PRICE_PER_TOKEN[scaleKey] || 3e-9;
-      const dau = CONFIG.DAILY_ACTIVE_USERS[scaleKey] || 500000;
-      const openSourceMult = Economy.getModelIncomeMultiplier(model);
-      let incomeBonus = 1.0;
-      if (model.techs && model.techs.includes('speculative')) incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus * Research.getTechLevel('speculative');
-      if (model.techs && model.techs.includes('kv_cache')) incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus * Research.getTechLevel('kv_cache');
-      const dailyTokens = dau * CONFIG.AVG_DAILY_TOKENS;
-      // 收入受部署GPU数量影响（按型号折算等效H100，不足时收入按比例降低）
-      const recInference = recommendedInferenceGPUs(model.params || 0);
-      const deployRatio = recInference > 0 ? Math.min(1, deployEquiv / recInference) : 1;
-      const dailyIncome = dailyTokens * pricePerToken * openSourceMult * incomeBonus * Game.getIncomeMultiplier() * deployRatio;
+          // 使用的技术
+          if (model.techs && model.techs.length > 0) {
+            const techNames = model.techs.map(t => CONFIG.TECH_RESEARCH[t] ? CONFIG.TECH_RESEARCH[t].name : t).join(', ');
+            html += '<div class="text-xs text-muted mt-1">技术: ' + techNames + '</div>';
+          }
 
-      html += '<div class="border border-border rounded p-2 mb-1">' +
-        '<div class="flex justify-between items-center">' +
-        '<span class="font-bold text-sm">' + model.name + '</span>' +
-        '<div class="flex items-center gap-2">' +
-        '<span class="font-mono text-base" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span>' +
-        '<button onclick="UI.showAdjustDeploymentModal(' + deployedIndex + ')" class="text-accent hover:text-white text-xs px-1 rounded border border-accent/40 hover:bg-accent/20" title="增减或替换该模型使用的GPU">调配 GPU</button>' +
-        '<button onclick="UI.removeDeployedModel(' + deployedIndex + ')" class="text-danger hover:text-white text-xs px-1 rounded border border-danger/40 hover:bg-danger/20" title="下架模型(释放推理GPU)">下架</button>' +
-        '</div>' +
-        '</div>' +
-        '<div class="text-xs text-muted mt-0.5">' + label + ' | ' + (model.openSource ? '开源' : '闭源') + ' | 推理 <span class="text-amber font-mono">' + deployTotal + ' GPU</span> (等效H100 ×<span class="text-amber font-mono">' + deployEquiv.toFixed(1) + '</span>)</div>' +
-        '<div class="text-xs text-muted mt-0.5">部署: ' + deployStr + (deployRatio < 1 ? ' <span class="text-danger">(不足, 收入' + Math.round(deployRatio * 100) + '%)</span>' : '') + '</div>' +
-        '<div class="grid grid-cols-2 gap-0.5 mt-1 text-xs">' +
-        '<span class="text-muted">日收入</span><span class="font-mono text-right text-accent">+$' + Economy.formatMoney(dailyIncome) + (model.openSource ? ' <span class="text-muted">(开源托管)</span>' : '') + '</span>';
+          html += '<div class="flex gap-2 mt-2">' +
+            '<button onclick="UI.deployCompletedModel(' + i + ')" class="text-accent hover:text-white text-xs px-2 py-1 rounded border border-accent/40 hover:bg-accent/20">部署</button>' +
+            '<button onclick="UI.deleteCompletedModel(' + i + ')" class="text-danger hover:text-white text-xs px-2 py-1 rounded border border-danger/40 hover:bg-danger/20">删除</button>' +
+            '</div>' +
+            '</div>';
+        }
+        if (models.length > 0) html += '<div class="text-muted uppercase tracking-wider mb-1 mt-3">已部署模型</div>';
+      }
+      for (let i = 0; i < models.length; i++) {
+        const model = models[i];
+        const deployedIndex = s.deployedModels.indexOf(model);
+        const score = model.score || 0;
+        const scoreColor = score >= 70 ? '#00cc66' : score >= 50 ? '#e6a817' : '#e74c3c';
+        const label = model.label || formatParams(model.params) || model.scale || '--';
 
-      // 基准测试分项
-      if (model.benchmarkBreakdown) {
-        for (const [bk, val] of Object.entries(model.benchmarkBreakdown)) {
-          const bm = CONFIG.BENCHMARKS[bk];
-          if (bm) {
-            html += '<span class="text-muted">' + bm.name + '</span><span class="font-mono text-right">' + val.toFixed(1) + '</span>';
+        // 部署GPU信息
+        const deployGPUs = model.deploymentGPUs || {};
+        const deployTotal = Object.values(deployGPUs).reduce((a, b) => a + b, 0);
+        const deployEquiv = effectiveInferenceGPUs(deployGPUs);
+        const deployStr = Object.entries(deployGPUs).map(([k, v]) => k + '×' + v).join(', ') || '未分配';
+        
+        // 计算部署总算力
+        let deployTflops = 0;
+        for (const [gpuKey, count] of Object.entries(deployGPUs)) {
+          const gpu = CONFIG.GPUS[gpuKey];
+          if (gpu) deployTflops += count * gpu.tflops;
+        }
+
+        // 计算该模型的日收入
+        const scaleKey = paramsToScaleKey(model.params || 0);
+        const pricePerToken = CONFIG.API_PRICE_PER_TOKEN[scaleKey] || 3e-9;
+        const dau = CONFIG.DAILY_ACTIVE_USERS[scaleKey] || 500000;
+        const openSourceMult = Economy.getModelIncomeMultiplier(model);
+        let incomeBonus = 1.0;
+        if (model.techs && model.techs.includes('speculative')) incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus * Research.getTechLevel('speculative');
+        if (model.techs && model.techs.includes('kv_cache')) incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus * Research.getTechLevel('kv_cache');
+        const dailyTokens = dau * CONFIG.AVG_DAILY_TOKENS;
+        // 收入受部署GPU数量影响（按型号折算等效H100，不足时收入按比例降低）
+        const recInference = recommendedInferenceGPUs(model.params || 0);
+        const deployRatio = recInference > 0 ? Math.min(1, deployEquiv / recInference) : 1;
+        const dailyIncome = dailyTokens * pricePerToken * openSourceMult * incomeBonus * Game.getIncomeMultiplier() * deployRatio;
+
+        html += '<div class="border border-border rounded p-2 mb-1">' +
+          '<div class="flex justify-between items-center">' +
+          '<span class="font-bold text-sm">' + (model.name || '未命名模型') + '</span>' +
+          '<div class="flex items-center gap-2">' +
+          '<span class="font-mono text-base" style="color:' + scoreColor + '">' + score.toFixed(1) + '</span>' +
+          '<button onclick="UI.showAdjustDeploymentModal(' + deployedIndex + ')" class="text-accent hover:text-white text-xs px-1 rounded border border-accent/40 hover:bg-accent/20" title="增减或替换该模型使用的GPU">调配 GPU</button>' +
+          '<button onclick="UI.removeDeployedModel(' + deployedIndex + ')" class="text-danger hover:text-white text-xs px-1 rounded border border-danger/40 hover:bg-danger/20" title="下架模型(释放推理GPU)">下架</button>' +
+          '</div>' +
+          '</div>' +
+          '<div class="text-xs text-muted mt-0.5">' + label + ' | ' + (model.openSource ? '开源' : '闭源') + ' | 推理 <span class="text-amber font-mono">' + deployTotal + ' GPU</span> (<span class="text-amber font-mono">' + deployTflops.toLocaleString() + '</span> TFLOPS)</div>' +
+          '<div class="text-xs text-muted mt-0.5">部署: ' + deployStr + (deployRatio < 1 ? ' <span class="text-danger">(不足, 收入' + Math.round(deployRatio * 100) + '%)</span>' : '') + '</div>' +
+          '<div class="grid grid-cols-2 gap-0.5 mt-1 text-xs">' +
+          '<span class="text-muted">日收入</span><span class="font-mono text-right text-accent">+$' + Economy.formatMoney(dailyIncome) + (model.openSource ? ' <span class="text-muted">(开源托管)</span>' : '') + '</span>';
+
+        // 基准测试分项
+        if (model.benchmarkBreakdown) {
+          for (const [bk, val] of Object.entries(model.benchmarkBreakdown)) {
+            const bm = CONFIG.BENCHMARKS[bk];
+            if (bm) {
+              html += '<span class="text-muted">' + bm.name + '</span><span class="font-mono text-right">' + (val || 0).toFixed(1) + '</span>';
+            }
           }
         }
-      }
 
-      // 使用的技术
-      if (model.techs && model.techs.length > 0) {
-        const techNames = model.techs.map(t => CONFIG.TECH_RESEARCH[t] ? CONFIG.TECH_RESEARCH[t].name : t).join(', ');
-        html += '<span class="text-muted col-span-2 mt-1">技术: ' + techNames + '</span>';
-      }
+        // 使用的技术
+        if (model.techs && model.techs.length > 0) {
+          const techNames = model.techs.map(t => CONFIG.TECH_RESEARCH[t] ? CONFIG.TECH_RESEARCH[t].name : t).join(', ');
+          html += '<span class="text-muted col-span-2 mt-1">技术: ' + techNames + '</span>';
+        }
 
-      html += '</div></div>';
+        html += '</div></div>';
+      }
+      el.innerHTML = html;
+    } catch (e) {
+      console.error('渲染产品列表时出错:', e);
+      el.innerHTML = '<div class="text-danger italic">渲染产品列表时出错: ' + e.message + '</div>';
     }
-    el.innerHTML = html;
   },
 
   removeDeployedModel(idx) {
@@ -442,6 +502,20 @@ const UI = {
     model.deployed = false;
     model.deploymentGPUs = null;
     UI.showDeployModelModal(model);
+  },
+
+  deleteCompletedModel(index) {
+    const s = Game.state;
+    const model = s.completedModels[index];
+    if (!model) return;
+    if (UI.isModelDeployed(model)) {
+      UI.toast('该模型已部署，无法删除');
+      return;
+    }
+    s.completedModels.splice(index, 1);
+    Game.addLog('已删除模型: ' + model.name);
+    UI.toast('模型已删除');
+    UI.update();
   },
 
   getModelKey(model) {
@@ -511,6 +585,41 @@ const UI = {
     document.getElementById('modal-close-btn').classList.remove('hidden');
   },
 
+  showSettingsModal() {
+    const dragDirection = localStorage.getItem('dragDirection') || 'normal';
+    const html = '<h2 class="text-lg font-bold text-accent mb-3">设置</h2>' +
+      '<div class="space-y-4">' +
+      '<div>' +
+      '<label class="text-sm text-muted mb-2 block">拖动方向</label>' +
+      '<div class="flex gap-2">' +
+      '<button id="drag-normal" class="modal-btn flex-1 ' + (dragDirection === 'normal' ? 'primary' : '') + '">跟随鼠标</button>' +
+      '<button id="drag-inverted" class="modal-btn flex-1 ' + (dragDirection === 'inverted' ? 'primary' : '') + '">反向鼠标</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="border-t border-border pt-4">' +
+      '<label class="text-sm text-muted mb-2 block">存档管理</label>' +
+      '<div class="flex gap-2">' +
+      '<button onclick="SaveSystem.save(false);UI.toast(\'游戏已保存\')" class="modal-btn flex-1">保存游戏</button>' +
+      '<button onclick="UI.showDeleteConfirm()" class="modal-btn flex-1" style="border-color:#e74c3c;color:#e74c3c">删除存档</button>' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+    document.getElementById('modal-close-btn').classList.remove('hidden');
+
+    document.getElementById('drag-normal').addEventListener('click', () => {
+      localStorage.setItem('dragDirection', 'normal');
+      UI.toast('拖动方向已设置为跟随鼠标');
+      UI.showSettingsModal();
+    });
+    document.getElementById('drag-inverted').addEventListener('click', () => {
+      localStorage.setItem('dragDirection', 'inverted');
+      UI.toast('拖动方向已设置为反向鼠标');
+      UI.showSettingsModal();
+    });
+  },
+
   showBankruptcyModal() {
     const html = '<h2 class="text-lg font-bold text-danger mb-3">公司破产</h2>' +
       '<div class="text-sm text-muted mb-2">' + Game.state.companyName + ' 已因资金链断裂而破产。</div>' +
@@ -538,38 +647,60 @@ const UI = {
     const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
 
     let html = '<h2 class="text-lg font-bold text-accent mb-2">部署模型</h2>';
+    const minTflops = recInference * 1979;
     html += '<div class="bg-[#111118] rounded p-3 mb-3">';
     html += '<div class="flex justify-between items-center">';
     html += '<span class="font-bold text-sm">' + model.name + '</span>';
     html += '<span class="font-mono text-base" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span>';
     html += '</div>';
     html += '<div class="text-xs text-muted mt-0.5">参数 ' + model.label + ' | ' + (model.openSource ? '开源' : '闭源') + '</div>';
-    html += '<div class="text-xs text-muted mt-1">最少 ' + recInference + ' GPU (以H100计, 低算力型号需更多)</div>';
+    html += '<div class="text-xs text-muted mt-1">最少 ' + recInference + ' GPU | 最低算力: ' + minTflops.toLocaleString() + ' TFLOPS</div>';
     html += '</div>';
+
+    // 算力对比（放在GPU列表上方）
+    html += '<div class="bg-panel border border-border rounded-lg p-3 mb-3">' +
+      '<div class="flex items-center justify-between mb-2">' +
+      '<span class="text-sm font-bold text-white">算力对比</span>' +
+      '<span class="text-xs text-muted">已分配 <span id="deploy-gpu-total" class="font-mono text-accent">0</span> GPU</span>' +
+      '</div>' +
+      '<div class="flex items-center justify-center gap-4">' +
+      '<div class="text-center">' +
+      '<div class="text-xs text-muted mb-1">已投入算力</div>' +
+      '<div class="text-2xl font-bold text-accent font-mono"><span id="deploy-tflops-total">0</span></div>' +
+      '<div class="text-xs text-muted">TFLOPS</div>' +
+      '</div>' +
+      '<div class="text-3xl text-muted font-bold">/</div>' +
+      '<div class="text-center">' +
+      '<div class="text-xs text-muted mb-1">最低要求</div>' +
+      '<div class="text-2xl font-bold text-amber font-mono">' + minTflops.toLocaleString() + '</div>' +
+      '<div class="text-xs text-muted">TFLOPS</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="text-xs text-muted mt-2 text-center">不同型号可混用，总算力不得低于最低要求</div>' +
+      '</div>';
 
     // GPU选择
     const trainingAlloc = Game.getTrainingGPUAllocation();
     const inferenceAlloc = Game.getInferenceGPUAllocation();
-    html += '<div class="text-xs mb-1">选择部署GPU型号及数量 (每型号最少需求已按算力折算):</div>';
+    html += '<div class="text-xs mb-1">勾选GPU型号后输入数量 (可多选混合部署):</div>';
     html += '<div class="grid grid-cols-1 gap-1 mb-2" id="deploy-gpu-grid">';
     for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
       const owned = s.gpuInventory[key] || 0;
       const trainingUsed = trainingAlloc[key] || 0;
       const inferenceUsed = inferenceAlloc[key] || 0;
       const avail = Math.max(0, owned - trainingUsed - inferenceUsed);
-      const recType = recommendedInferenceGPUsForType(model.params, key);
       const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
-      html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (owned === 0 ? ' opacity-40' : '') + '">' +
+      const disabled = owned === 0;
+      html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (disabled ? ' opacity-40' : '') + '">' +
+        '<input type="checkbox" class="deploy-gpu-checkbox" data-gpu="' + key + '"' + (disabled ? ' disabled' : '') + '>' +
         '<span class="inline-block w-2 h-2 rounded-full" style="background:' + colorHex + '"></span>' +
         '<span class="font-bold w-16">' + key + '</span>' +
         '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS</span>' +
-        '<span class="text-muted">可用 ' + avail + '/' + owned + '</span>' +
-        '<span class="text-accent" title="最少推理数">最少' + recType + '</span>' +
-        '<input type="number" class="modal-input w-16 deploy-gpu-input" data-gpu="' + key + '" data-max="' + avail + '" value="' + Math.min(recType, avail) + '" min="0" max="' + avail + '"' + (owned === 0 ? ' disabled' : '') + '>' +
+        '<span class="text-muted">可用 ' + avail + '</span>' +
+        '<input type="number" class="modal-input w-16 deploy-gpu-input" data-gpu="' + key + '" data-max="' + avail + '" value="0" min="0" max="' + avail + '" disabled>' +
         '</div>';
     }
     html += '</div>';
-    html += '<div class="text-xs mb-3">已分配: <span id="deploy-gpu-total" class="font-mono text-accent">0</span> GPU | 等效 H100: <span id="deploy-gpu-equivalent" class="font-mono text-accent">0.0</span>/<span class="font-mono">' + recInference + '</span><div class="text-muted mt-1">不同型号可混用，按 TFLOPS 折算为 H100 等效；部署不得低于最低等效量。</div></div>';
 
     html += '<div class="flex gap-2 justify-end">';
     html += '<button onclick="UI.skipDeploy()" class="modal-btn">暂不部署</button>';
@@ -583,18 +714,57 @@ const UI = {
     // 绑定事件
     const updateDeployStats = () => {
       let total = 0;
-      let equivalent = 0;
+      let totalTflops = 0;
       document.querySelectorAll('.deploy-gpu-input').forEach(inp => {
         const v = Math.max(0, parseInt(inp.value) || 0);
         const max = parseInt(inp.dataset.max) || 0;
         if (v > max) { inp.value = max; }
         const actual = Math.min(v, max);
         total += actual;
-        equivalent += actual * gpuToH100Rate(inp.dataset.gpu);
+        const gpu = CONFIG.GPUS[inp.dataset.gpu];
+        if (gpu) totalTflops += actual * gpu.tflops;
       });
       document.getElementById('deploy-gpu-total').textContent = total;
-      document.getElementById('deploy-gpu-equivalent').textContent = equivalent.toFixed(1);
+      document.getElementById('deploy-tflops-total').textContent = totalTflops.toLocaleString();
+      
+      // 视觉提示：算力不足时变红，满足时变绿
+      const tflopsEl = document.getElementById('deploy-tflops-total');
+      const requiredEl = document.querySelector('#modal-content .text-2xl.font-bold.text-amber');
+      if (tflopsEl) {
+        if (totalTflops < minTflops) {
+          tflopsEl.classList.remove('text-accent');
+          tflopsEl.classList.add('text-danger');
+          if (requiredEl) {
+            requiredEl.classList.remove('text-accent');
+            requiredEl.classList.add('text-danger');
+          }
+        } else {
+          tflopsEl.classList.remove('text-danger');
+          tflopsEl.classList.add('text-accent');
+          if (requiredEl) {
+            requiredEl.classList.remove('text-danger', 'text-amber');
+            requiredEl.classList.add('text-accent');
+          }
+        }
+      }
     };
+
+    // GPU复选框事件
+    document.querySelectorAll('.deploy-gpu-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const gpuKey = checkbox.dataset.gpu;
+        const input = document.querySelector('.deploy-gpu-input[data-gpu="' + gpuKey + '"]');
+        if (checkbox.checked) {
+          input.disabled = false;
+          input.value = 1; // 默认设置为1
+        } else {
+          input.disabled = true;
+          input.value = 0;
+        }
+        updateDeployStats();
+      });
+    });
+
     document.querySelectorAll('.deploy-gpu-input').forEach(inp => {
       inp.addEventListener('input', updateDeployStats);
     });
@@ -615,7 +785,8 @@ const UI = {
         return;
       }
       if (!Game.meetsModelInferenceMinimum(UI._pendingModel, deploymentGPUs)) {
-        UI.toast('GPU 等效算力不足，至少需要 ' + recInference + ' 张 H100 等效算力');
+        const minTflops = recInference * 1979;
+        UI.toast('GPU 算力不足，至少需要 ' + minTflops.toLocaleString() + ' TFLOPS');
         return;
       }
       // 部署模型
@@ -640,12 +811,13 @@ const UI = {
     });
   },
 
-  // 已部署模型可随时增加、削减或替换 GPU；只要混合型号的 H100 等效量不低于下限。
+  // 已部署模型可随时增加、削减或替换 GPU；只要总算力不低于下限。
   showAdjustDeploymentModal(index) {
     const s = Game.state;
     const model = s.deployedModels[index];
     if (!model) return;
     const minimum = Game.getModelMinimumInferenceH100(model);
+    const minTflops = minimum * 1979;
     const trainingAlloc = Game.getTrainingGPUAllocation();
     const otherAlloc = {};
     s.deployedModels.forEach((item, i) => {
@@ -656,7 +828,30 @@ const UI = {
     });
 
     let html = '<h2 class="text-lg font-bold text-accent mb-2">调配模型 GPU</h2>';
-    html += '<div class="text-xs text-muted mb-3"><span class="text-white font-bold">' + model.name + '</span>：最低需要 <span class="text-amber font-mono">' + minimum + ' H100 等效</span>。可减少、增加或混合替换型号。</div>';
+    html += '<div class="text-xs text-muted mb-3"><span class="text-white font-bold">' + model.name + '</span>：最低需要 <span class="text-amber font-mono">' + minTflops.toLocaleString() + ' TFLOPS</span>。可减少、增加或混合替换型号。</div>';
+    
+    // 算力对比卡片
+    html += '<div class="bg-panel border border-border rounded-lg p-3 mb-3">' +
+      '<div class="flex items-center justify-between mb-2">' +
+      '<span class="text-sm font-bold text-white">算力对比</span>' +
+      '<span class="text-xs text-muted">已分配 <span id="adjust-gpu-total" class="font-mono text-accent">0</span> GPU</span>' +
+      '</div>' +
+      '<div class="flex items-center justify-center gap-4">' +
+      '<div class="text-center">' +
+      '<div class="text-xs text-muted mb-1">已投入算力</div>' +
+      '<div class="text-2xl font-bold text-accent font-mono"><span id="adjust-tflops-total">0</span></div>' +
+      '<div class="text-xs text-muted">TFLOPS</div>' +
+      '</div>' +
+      '<div class="text-3xl text-muted font-bold">/</div>' +
+      '<div class="text-center">' +
+      '<div class="text-xs text-muted mb-1">最低要求</div>' +
+      '<div class="text-2xl font-bold text-amber font-mono">' + minTflops.toLocaleString() + '</div>' +
+      '<div class="text-xs text-muted">TFLOPS</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="text-xs text-muted mt-2 text-center">不同型号可混用，总算力不得低于最低要求</div>' +
+      '</div>';
+    
     html += '<div class="grid grid-cols-1 gap-1 mb-2">';
     for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
       const owned = s.gpuInventory[key] || 0;
@@ -666,13 +861,13 @@ const UI = {
       html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (owned === 0 ? ' opacity-40' : '') + '">' +
         '<span class="inline-block w-2 h-2 rounded-full" style="background:' + colorHex + '"></span>' +
         '<span class="font-bold w-16">' + key + '</span>' +
-        '<span class="text-muted flex-1">1 张 = ' + gpuToH100Rate(key).toFixed(2) + ' H100</span>' +
+        '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS</span>' +
         '<span class="text-muted">可用 ' + max + '/' + owned + '</span>' +
         '<input type="number" class="modal-input w-16 adjust-deploy-input" data-gpu="' + key + '" data-max="' + max + '" value="' + current + '" min="0" max="' + max + '"' + (owned === 0 ? ' disabled' : '') + '>' +
         '</div>';
     }
     html += '</div>';
-    html += '<div class="text-xs mb-3">GPU 数量: <span id="adjust-gpu-total" class="font-mono text-accent">0</span> | 等效 H100: <span id="adjust-gpu-equivalent" class="font-mono text-accent">0.0</span>/<span class="font-mono">' + minimum + '</span></div>';
+    html += '<div class="text-xs mb-3">GPU 数量: <span id="adjust-gpu-total" class="font-mono text-accent">0</span> | 总算力: <span id="adjust-tflops-total" class="font-mono text-accent">0</span>/<span class="font-mono">' + minTflops.toLocaleString() + '</span> TFLOPS</div>';
     html += '<div class="flex gap-2 justify-end"><button id="confirm-adjust-deploy" class="modal-btn primary">保存调配</button></div>';
     document.getElementById('modal-content').innerHTML = html;
     document.getElementById('modal-overlay').classList.remove('hidden');
@@ -681,17 +876,39 @@ const UI = {
     const readAllocation = () => {
       const allocation = {};
       let total = 0;
-      let equivalent = 0;
+      let totalTflops = 0;
       document.querySelectorAll('.adjust-deploy-input').forEach(inp => {
         const max = parseInt(inp.dataset.max) || 0;
         const value = Math.max(0, Math.min(max, parseInt(inp.value) || 0));
         inp.value = value;
         if (value > 0) allocation[inp.dataset.gpu] = value;
         total += value;
-        equivalent += value * gpuToH100Rate(inp.dataset.gpu);
+        const gpu = CONFIG.GPUS[inp.dataset.gpu];
+        if (gpu) totalTflops += value * gpu.tflops;
       });
       document.getElementById('adjust-gpu-total').textContent = total;
-      document.getElementById('adjust-gpu-equivalent').textContent = equivalent.toFixed(1);
+      document.getElementById('adjust-tflops-total').textContent = totalTflops.toLocaleString();
+      
+      // 视觉提示：算力不足时变红，满足时变绿
+      const tflopsEl = document.getElementById('adjust-tflops-total');
+      const requiredEl = document.querySelector('#modal-content .text-2xl.font-bold.text-amber');
+      if (tflopsEl) {
+        if (totalTflops < minTflops) {
+          tflopsEl.classList.remove('text-accent');
+          tflopsEl.classList.add('text-danger');
+          if (requiredEl) {
+            requiredEl.classList.remove('text-accent');
+            requiredEl.classList.add('text-danger');
+          }
+        } else {
+          tflopsEl.classList.remove('text-danger');
+          tflopsEl.classList.add('text-accent');
+          if (requiredEl) {
+            requiredEl.classList.remove('text-danger', 'text-amber');
+            requiredEl.classList.add('text-accent');
+          }
+        }
+      }
       return allocation;
     };
     document.querySelectorAll('.adjust-deploy-input').forEach(inp => inp.addEventListener('input', readAllocation));
@@ -699,11 +916,11 @@ const UI = {
     document.getElementById('confirm-adjust-deploy').addEventListener('click', () => {
       const allocation = readAllocation();
       if (!Game.meetsModelInferenceMinimum(model, allocation)) {
-        UI.toast('不能低于最低部署量：需要 ' + minimum + ' 张 H100 等效算力');
+        UI.toast('不能低于最低部署量：需要 ' + minTflops.toLocaleString() + ' TFLOPS');
         return;
       }
       model.deploymentGPUs = allocation;
-      Game.addLog('调配模型 ' + model.name + ' 的推理 GPU（' + effectiveInferenceGPUs(allocation).toFixed(1) + ' H100 等效）');
+      Game.addLog('调配模型 ' + model.name + ' 的推理 GPU（' + totalTflops.toLocaleString() + ' TFLOPS）');
       if (Game.getTotalPowerMW() > s.powerCapacityMW) {
         s.blackoutDays = 3;
         Game.addLog('警告: GPU 调配后功耗超载! 供电不足，开始断电!');
@@ -894,8 +1111,9 @@ const UI = {
   // === 扩容供电模态框 ===
   buildExpandPowerModal() {
     const s = Game.state;
+    const baseCost = CONFIG.POWER_EXPAND_BASE_COST_PER_MW * Math.pow(CONFIG.POWER_EXPAND_EXPONENT, s.powerExpands || 0);
     let html = '<h2 class="text-lg font-bold text-accent mb-3">扩容供电</h2>';
-    html += '<div class="text-xs text-muted mb-3">当前容量: ' + s.powerCapacityMW + 'MW | 扩容成本: $' + Economy.formatMoney(CONFIG.POWER_EXPAND_COST_PER_MW) + ' / MW</div>';
+    html += '<div class="text-xs text-muted mb-3">当前容量: ' + s.powerCapacityMW + 'MW | 当前单价: $' + Economy.formatMoney(baseCost) + ' / MW</div>';
     html += '<div class="flex items-center gap-2 mb-3">' +
       '<span class="text-xs text-muted">扩容:</span>' +
       '<input id="power-mw" type="number" class="modal-input w-24" value="5" min="1" max="100">' +
@@ -911,7 +1129,9 @@ const UI = {
   bindExpandPowerEvents() {
     const updateCost = () => {
       const mw = parseInt(document.getElementById('power-mw').value) || 0;
-      document.getElementById('power-cost').textContent = '$' + Economy.formatMoney(mw * CONFIG.POWER_EXPAND_COST_PER_MW);
+      const s = Game.state;
+      const baseCost = CONFIG.POWER_EXPAND_BASE_COST_PER_MW * Math.pow(CONFIG.POWER_EXPAND_EXPONENT, s.powerExpands || 0);
+      document.getElementById('power-cost').textContent = '$' + Economy.formatMoney(mw * baseCost);
     };
     document.getElementById('power-mw').addEventListener('input', updateCost);
     document.getElementById('confirm-power').addEventListener('click', () => {
@@ -925,8 +1145,9 @@ const UI = {
   // === 扩容冷却模态框 ===
   buildExpandCoolingModal() {
     const s = Game.state;
+    const baseCost = CONFIG.COOLING_EXPAND_BASE_COST_PER_MW * Math.pow(CONFIG.COOLING_EXPAND_EXPONENT, s.coolingExpands || 0);
     let html = '<h2 class="text-lg font-bold text-accent mb-3">扩容冷却系统</h2>';
-    html += '<div class="text-xs text-muted mb-3">当前容量: ' + s.coolingCapacityMW + 'MW | 扩容成本: $' + Economy.formatMoney(CONFIG.COOLING_EXPAND_COST_PER_MW) + ' / MW</div>';
+    html += '<div class="text-xs text-muted mb-3">当前容量: ' + s.coolingCapacityMW + 'MW | 当前单价: $' + Economy.formatMoney(baseCost) + ' / MW</div>';
     html += '<div class="flex items-center gap-2 mb-3">' +
       '<span class="text-xs text-muted">扩容:</span>' +
       '<input id="cooling-mw" type="number" class="modal-input w-24" value="2" min="1" max="100">' +
@@ -942,7 +1163,9 @@ const UI = {
   bindExpandCoolingEvents() {
     const updateCost = () => {
       const mw = parseInt(document.getElementById('cooling-mw').value) || 0;
-      document.getElementById('cooling-cost').textContent = '$' + Economy.formatMoney(mw * CONFIG.COOLING_EXPAND_COST_PER_MW);
+      const s = Game.state;
+      const baseCost = CONFIG.COOLING_EXPAND_BASE_COST_PER_MW * Math.pow(CONFIG.COOLING_EXPAND_EXPONENT, s.coolingExpands || 0);
+      document.getElementById('cooling-cost').textContent = '$' + Economy.formatMoney(mw * baseCost);
     };
     document.getElementById('cooling-mw').addEventListener('input', updateCost);
     document.getElementById('confirm-cooling').addEventListener('click', () => {
@@ -1134,10 +1357,11 @@ const UI = {
       '<span id="train-params-label" class="text-xs font-bold text-accent whitespace-nowrap">70B</span>' +
       '</div>' +
       '<div class="relative h-4 text-[10px] text-muted mt-1">' +
-      '<span class="absolute left-0">1B</span>' +
-      '<span class="absolute -translate-x-1/2" style="left:25%">500B</span>' +
-      '<span class="absolute -translate-x-1/2" style="left:50%">1T</span>' +
-      '<span class="absolute right-0">3TB</span>' +
+      '<span class="absolute" style="left:0%">1B</span>' +
+      '<span class="absolute -translate-x-1/2" style="left:24.97%">750B</span>' +
+      '<span class="absolute -translate-x-1/2" style="left:49.98%">1.5T</span>' +
+      '<span class="absolute -translate-x-1/2" style="left:74.99%">2.25T</span>' +
+      '<span class="absolute -translate-x-full" style="left:100%">3T</span>' +
       '</div>' +
       '<div id="train-params-info" class="text-xs text-muted mt-1">参数 70B | 训练数据 1.4T tokens | 最少推理 14 GPU</div>' +
       '</div>';
@@ -1147,32 +1371,51 @@ const UI = {
       '<div class="text-xs text-accent mt-1">' + DataCollection.getStats().totalTokens + 'B tokens | 质量: ' + DataCollection.getEffectiveQualityLabel() + '</div>' +
       '<div class="text-xs text-muted">(通过"采集数据"按钮收集训练数据)</div></div>';
 
+    // 算力对比（放在GPU列表上方）
+    html += '<div class="bg-panel border border-border rounded-lg p-3 mb-3">' +
+      '<div class="flex items-center justify-between mb-2">' +
+      '<span class="text-sm font-bold text-white">算力对比</span>' +
+      '<span class="text-xs text-muted">已分配 <span id="train-gpu-total" class="font-mono text-accent">0</span> GPU</span>' +
+      '</div>' +
+      '<div class="flex items-center justify-center gap-4">' +
+      '<div class="text-center">' +
+      '<div class="text-xs text-muted mb-1">已投入算力</div>' +
+      '<div class="text-2xl font-bold text-accent font-mono"><span id="train-tflops-total">0</span></div>' +
+      '<div class="text-xs text-muted">TFLOPS</div>' +
+      '</div>' +
+      '<div class="text-3xl text-muted font-bold">/</div>' +
+      '<div class="text-center">' +
+      '<div class="text-xs text-muted mb-1">最低要求</div>' +
+      '<div class="text-2xl font-bold text-amber font-mono"><span id="train-tflops-required">0</span></div>' +
+      '<div class="text-xs text-muted">TFLOPS</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="text-xs text-muted mt-2 text-center">训练预估功耗: <span id="train-power-estimate" class="font-mono text-amber">0.0</span> MW</div>' +
+      '</div>';
+
     // GPU 分配（按型号选择，最少需求按算力折算）
     const inferenceAlloc = Game.getInferenceGPUAllocation();
     const trainingAlloc = Game.getTrainingGPUAllocation();
-    html += '<div class="mb-2 text-xs">选择训练GPU型号及数量 (每型号最少需求已按算力折算):</div>';
+    html += '<div class="mb-2 text-xs">勾选GPU型号后输入数量 (可多选混合训练):</div>';
+    html += '<button id="allocate-all-gpus-btn" class="action-btn mb-2 text-xs">投入所有GPU</button>';
     html += '<div class="grid grid-cols-1 gap-1 mb-2" id="gpu-alloc-grid">';
     for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
       const owned = s.gpuInventory[key] || 0;
       const inferenceUsed = inferenceAlloc[key] || 0;
       const trainingUsed = trainingAlloc[key] || 0;
       const avail = Math.max(0, owned - inferenceUsed - trainingUsed);
-      const recType = recommendedInferenceGPUsForType(70e9, key);
-      const defaultVal = Math.min(recType, avail);
       const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
-      html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (owned === 0 ? ' opacity-40' : '') + '">' +
+      const disabled = owned === 0;
+      html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (disabled ? ' opacity-40' : '') + '">' +
+        '<input type="checkbox" class="gpu-alloc-checkbox" data-gpu="' + key + '"' + (disabled ? ' disabled' : '') + '>' +
         '<span class="inline-block w-2 h-2 rounded-full" style="background:' + colorHex + '"></span>' +
         '<span class="font-bold w-16">' + key + '</span>' +
-        '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS | ' + (gpu.power / 1000) + 'kW</span>' +
-        '<span class="text-muted">可用 ' + avail + '/' + owned + (trainingUsed > 0 ? '（训练占用' + trainingUsed + '）' : '') + '</span>' +
-        '<span class="text-accent" id="rec-' + key + '" title="最少训练数">最少' + recType + '</span>' +
-        '<input type="number" class="modal-input w-16 gpu-alloc-input" data-gpu="' + key + '" data-max="' + avail + '" data-auto="' + defaultVal + '" value="' + defaultVal + '" min="0" max="' + avail + '"' + (owned === 0 ? ' disabled' : '') + '>' +
+        '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS</span>' +
+        '<span class="text-muted">可用 ' + avail + '</span>' +
+        '<input type="number" class="modal-input w-16 gpu-alloc-input" data-gpu="' + key + '" data-max="' + avail + '" value="0" min="0" max="' + avail + '" disabled>' +
         '</div>';
     }
     html += '</div>';
-    html += '<div class="text-xs mb-2">已分配: <span id="train-gpu-total" class="font-mono text-accent">0</span> GPU' +
-      ' | 总算力: <span id="train-tflops-total" class="font-mono text-accent">0</span> TFLOPS</div>';
-    html += '<div class="text-xs text-muted mb-3">训练预估功耗: <span id="train-power-estimate" class="font-mono text-amber">0.0</span> MW | 当前实际功耗: <span class="font-mono">' + Game.getTotalPowerMW().toFixed(2) + '</span> MW / 额定 <span class="font-mono">' + Game.getRatedPowerMW().toFixed(2) + '</span> MW</div>';
 
     // 对齐方法
     html += '<div class="mb-3"><label class="text-xs text-muted">对齐方法</label><div class="flex gap-2 mt-1">' +
@@ -1240,6 +1483,27 @@ const UI = {
       });
       document.getElementById('train-gpu-total').textContent = totalGPU;
       document.getElementById('train-tflops-total').textContent = totalTFLOPS.toLocaleString();
+      
+      // 计算并更新最低要求
+      const recInference = recommendedInferenceGPUs(selectedParams);
+      const minTflops = recInference * 1979;
+      document.getElementById('train-tflops-required').textContent = minTflops.toLocaleString();
+      
+      // 视觉提示：算力不足时变红
+      const tflopsEl = document.getElementById('train-tflops-total');
+      const requiredEl = document.getElementById('train-tflops-required');
+      if (totalTFLOPS < minTflops) {
+        tflopsEl.classList.remove('text-accent');
+        tflopsEl.classList.add('text-danger');
+        requiredEl.classList.remove('text-amber');
+        requiredEl.classList.add('text-danger');
+      } else {
+        tflopsEl.classList.remove('text-danger');
+        tflopsEl.classList.add('text-accent');
+        requiredEl.classList.remove('text-danger', 'text-amber');
+        requiredEl.classList.add('text-accent');
+      }
+      
       const estPower = totalPower * 0.95 * (1 + CONFIG.COOLING_RATIO);
       document.getElementById('train-power-estimate').textContent = estPower.toFixed(2);
     };
@@ -1252,25 +1516,28 @@ const UI = {
       const tokens = selectedParams * CONFIG.CHINCHILLA_RATIO;
       const tokensStr = formatParams(tokens);
       const recInference = recommendedInferenceGPUs(selectedParams);
-      paramsInfo.textContent = '参数 ' + labelStr + ' | 训练数据 ' + tokensStr + ' tokens | 最少 ' + recInference + ' GPU (H100)';
-      // 按型号联动最少需求数（用户未手动修改时自动同步）
-      document.querySelectorAll('.gpu-alloc-input').forEach(inp => {
-        const key = inp.dataset.gpu;
-        const rec = recommendedInferenceGPUsForType(selectedParams, key);
-        const recEl = document.getElementById('rec-' + key);
-        if (recEl) recEl.textContent = '最少' + rec;
-        const autoVal = parseInt(inp.dataset.auto) || 0;
-        if ((parseInt(inp.value) || 0) === autoVal) {
-          const max = parseInt(inp.dataset.max) || 0;
-          const newVal = Math.min(rec, max);
-          inp.value = newVal;
-          inp.dataset.auto = newVal;
-        }
-      });
+      const minTflops = recInference * 1979;
+      paramsInfo.textContent = '参数 ' + labelStr + ' | 训练数据 ' + tokensStr + ' tokens | 最低算力: ' + minTflops.toLocaleString() + ' TFLOPS';
       updateAllocStats();
     };
     slider.addEventListener('input', updateParamsDisplay);
     updateParamsDisplay();
+
+    // GPU复选框事件
+    document.querySelectorAll('.gpu-alloc-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const gpuKey = checkbox.dataset.gpu;
+        const input = document.querySelector('.gpu-alloc-input[data-gpu="' + gpuKey + '"]');
+        if (checkbox.checked) {
+          input.disabled = false;
+          input.value = 1; // 默认设置为1
+        } else {
+          input.disabled = true;
+          input.value = 0;
+        }
+        updateAllocStats();
+      });
+    });
 
     document.querySelectorAll('.align-option').forEach(el => {
       el.addEventListener('click', () => {
@@ -1309,6 +1576,25 @@ const UI = {
     });
     updateAllocStats();
 
+    // "投入所有GPU"按钮事件
+    const allocateAllBtn = document.getElementById('allocate-all-gpus-btn');
+    if (allocateAllBtn) {
+      allocateAllBtn.addEventListener('click', () => {
+        document.querySelectorAll('.gpu-alloc-checkbox').forEach(checkbox => {
+          if (!checkbox.disabled) {
+            checkbox.checked = true;
+            const gpuKey = checkbox.dataset.gpu;
+            const input = document.querySelector('.gpu-alloc-input[data-gpu="' + gpuKey + '"]');
+            if (input) {
+              input.disabled = false;
+              input.value = input.dataset.max || '0';
+            }
+          }
+        });
+        updateAllocStats();
+      });
+    }
+
     document.getElementById('confirm-train').addEventListener('click', () => {
       const modelName = document.getElementById('train-name').value.trim() || ('Model-' + Game.state.day);
       // 收集GPU分配
@@ -1343,24 +1629,27 @@ const UI = {
     const s = Game.state;
     const r = s.researchers;
     let html = '<h2 class="text-lg font-bold text-accent mb-3">聘请研究员</h2>';
-    html += '<p class="text-xs text-muted mb-3">研究员提供训练效率加成，不同等级效果不同。每级最多5位。每30天可聘请一次。</p>';
+    html += '<p class="text-xs text-muted mb-3">研究员提供训练效率加成，不同等级效果不同。薪资随聘请次数指数上涨。每30天可聘请一次。</p>';
 
     for (const [key, tier] of Object.entries(CONFIG.RESEARCHER_TIERS)) {
       const count = r[key] || 0;
-      const full = count >= CONFIG.RESEARCHER_MAX_PER_TIER;
-      const locked = s.valuation < tier.unlockValuation;
-      const lockClass = locked ? 'opacity-50 cursor-not-allowed' : (full ? 'opacity-50' : 'cursor-pointer hover:border-accent');
-      html += '<div class="researcher-tier p-3 border border-border rounded mb-2 ' + lockClass + '" data-tier="' + key + '" data-locked="' + locked + '">' +
+      const nextSalary = Math.ceil(tier.baseSalary * Math.pow(CONFIG.RESEARCHER_PRICE_MULTIPLIER, count));
+      const canAfford = s.cash >= nextSalary;
+      const unlocked = s.valuation >= tier.unlockValuation;
+      const lockClass = (!unlocked || !canAfford) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-accent';
+
+      html += '<div class="researcher-tier p-3 border border-border rounded mb-2 ' + lockClass + '" data-tier="' + key + '" data-affordable="' + (unlocked && canAfford) + '">' +
         '<div class="flex justify-between items-center">' +
         '<span class="font-bold text-sm">' + tier.name + '</span>' +
-        '<span class="text-xs text-muted">' + count + '/' + CONFIG.RESEARCHER_MAX_PER_TIER + '</span>' +
+        '<span class="text-xs text-muted">已聘请: ' + count + ' 人</span>' +
         '</div>' +
         '<div class="text-xs text-muted mt-1">' + tier.desc + '</div>' +
         '<div class="text-xs mt-1">' +
         '<span class="tag tag-green">训练效率 +' + (tier.effBonus * 100).toFixed(0) + '%</span>' +
-        '<span class="text-muted ml-2">月薪 $' + Economy.formatMoney(tier.salary) + '</span>' +
+        '<span class="text-muted ml-2">下次月薪: <span class="text-accent">$' + Economy.formatMoney(nextSalary) + '</span></span>' +
         '</div>' +
-        (locked ? '<div class="text-xs text-danger mt-1">需市值 $' + Economy.formatMoney(tier.unlockValuation) + '</div>' : '') +
+        (!unlocked ? '<div class="text-xs text-danger mt-1">需要市值 $' + Economy.formatMoney(tier.unlockValuation) + ' 解锁 (当前 $' + Economy.formatMoney(s.valuation) + ')</div>' :
+        (!canAfford ? '<div class="text-xs text-danger mt-1">资金不足</div>' : '')) +
         '</div>';
     }
 
@@ -1369,14 +1658,12 @@ const UI = {
 
   bindHireResearcherEvents() {
     document.querySelectorAll('.researcher-tier').forEach(el => {
-      if (el.dataset.locked === 'true') {
+      if (el.dataset.affordable === 'false') {
         el.addEventListener('click', () => {
-          const tier = el.dataset.tier;
-          UI.toast(CONFIG.RESEARCHER_TIERS[tier].name + ' 需要市值 $' + Economy.formatMoney(CONFIG.RESEARCHER_TIERS[tier].unlockValuation) + ' 解锁');
+          UI.toast('资金不足，无法聘请');
         });
         return;
       }
-      if (el.classList.contains('opacity-50')) return;
       el.addEventListener('click', () => {
         const tier = el.dataset.tier;
         Economy.hireResearcher(tier);

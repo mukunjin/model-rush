@@ -12,10 +12,12 @@ const CONFIG = {
 
   // 供电
   INITIAL_POWER_CAPACITY_MW: 1,
-  POWER_EXPAND_COST_PER_MW: 50_000_000,
+  POWER_EXPAND_BASE_COST_PER_MW: 50_000_000,
+  POWER_EXPAND_EXPONENT: 1.3,
   COOLING_RATIO: 0.30,
   INITIAL_COOLING_CAPACITY_MW: 1.5,
-  COOLING_EXPAND_COST_PER_MW: 20_000_000,
+  COOLING_EXPAND_BASE_COST_PER_MW: 20_000_000,
+  COOLING_EXPAND_EXPONENT: 1.25,
 
   // 数据中心扩容：往上加一层，每层固定 400 个机架位，成本逐层递增。
   DATACENTER_EXPAND_BASE_COST: 75_000_000,
@@ -30,20 +32,20 @@ const CONFIG = {
   SALARY_PER_GPU: 500,
   BASE_RENT: 2_000_000,
 
-  // GPU 型号
+  // GPU 型号（算力为FP16/BF16 Tensor Core密集性能，单位TFLOPS）
   GPUS: {
     A100:   { name: 'A100 80GB', arch: 'Ampere', tflops: 312, vram: 80, vram_type: 'HBM2e', bw: 2.0, power: 400, price: 15000, color: 0x7f8c8d, unlockValuation: 0 },
-    H100:   { name: 'H100', arch: 'Hopper', tflops: 990, vram: 80, vram_type: 'HBM3', bw: 3.35, power: 700, price: 30000, color: 0x00cc66, unlockValuation: 200_000_000 },
-    H800:   { name: 'H800', arch: 'Hopper', tflops: 750, vram: 80, vram_type: 'HBM3', bw: 2.0, power: 700, price: 35000, color: 0x00aa55, unlockValuation: 300_000_000 },
+    H100:   { name: 'H100', arch: 'Hopper', tflops: 1979, vram: 80, vram_type: 'HBM3', bw: 3.35, power: 700, price: 30000, color: 0x00cc66, unlockValuation: 200_000_000 },
+    H800:   { name: 'H800', arch: 'Hopper', tflops: 1979, vram: 80, vram_type: 'HBM3', bw: 2.0, power: 700, price: 35000, color: 0x00aa55, unlockValuation: 300_000_000 },
     MI300X: { name: 'MI300X', arch: 'CDNA3', tflops: 1307, vram: 192, vram_type: 'HBM3', bw: 5.3, power: 750, price: 20000, color: 0xce3b3b, unlockValuation: 300_000_000 },
     L40S:   { name: 'L40S', arch: 'Ada Lovelace', tflops: 733, vram: 48, vram_type: 'GDDR6', bw: 0.86, power: 350, price: 12000, color: 0x4488cc, unlockValuation: 150_000_000 },
-    H200:   { name: 'H200', arch: 'Hopper', tflops: 2000, vram: 141, vram_type: 'HBM3e', bw: 4.8, power: 700, price: 45000, color: 0xe6a817, unlockValuation: 500_000_000 },
-    MI325X: { name: 'MI325X', arch: 'CDNA3', tflops: 1630, vram: 256, vram_type: 'HBM3e', bw: 6.0, power: 750, price: 28000, color: 0xd32f2f, unlockValuation: 800_000_000 },
+    H200:   { name: 'H200', arch: 'Hopper', tflops: 1979, vram: 141, vram_type: 'HBM3e', bw: 4.8, power: 700, price: 45000, color: 0xe6a817, unlockValuation: 500_000_000 },
+    MI325X: { name: 'MI325X', arch: 'CDNA3', tflops: 1307, vram: 256, vram_type: 'HBM3e', bw: 6.0, power: 1000, price: 28000, color: 0xd32f2f, unlockValuation: 800_000_000 },
     Gaudi3: { name: 'Gaudi 3', arch: 'Gaudi', tflops: 1835, vram: 128, vram_type: 'HBM2e', bw: 3.7, power: 900, price: 35000, color: 0x9966ff, unlockValuation: 600_000_000 },
     B200:   { name: 'B200', arch: 'Blackwell', tflops: 2250, vram: 192, vram_type: 'HBM3e', bw: 8.0, power: 1000, price: 55000, color: 0xe74c3c, unlockValuation: 1_000_000_000 },
-    B300:   { name: 'B300', arch: 'Blackwell Ultra', tflops: 2500, vram: 288, vram_type: 'HBM3e', bw: 8.0, power: 1400, price: 70000, color: 0xff5722, unlockValuation: 2_000_000_000 },
-    MI355X: { name: 'MI355X', arch: 'CDNA4', tflops: 3000, vram: 288, vram_type: 'HBM3e', bw: 8.0, power: 1000, price: 60000, color: 0xb71c1c, unlockValuation: 3_000_000_000 },
-    GB300:  { name: 'GB300 NVL72', arch: 'Blackwell Ultra', tflops: 3750, vram: 288, vram_type: 'HBM3e', bw: 13.5, power: 1800, price: 90000, color: 0xff6d00, unlockValuation: 5_000_000_000 },
+    B300:   { name: 'B300', arch: 'Blackwell Ultra', tflops: 4500, vram: 288, vram_type: 'HBM3e', bw: 8.0, power: 1400, price: 70000, color: 0xff5722, unlockValuation: 2_000_000_000 },
+    MI355X: { name: 'MI355X', arch: 'CDNA4', tflops: 2500, vram: 288, vram_type: 'HBM3e', bw: 8.0, power: 1400, price: 60000, color: 0xb71c1c, unlockValuation: 3_000_000_000 },
+    GB300:  { name: 'GB300 NVL72', arch: 'Blackwell Ultra', tflops: 4500, vram: 288, vram_type: 'HBM3e', bw: 8.0, power: 1800, price: 90000, color: 0xff6d00, unlockValuation: 5_000_000_000 },
     Rubin:  { name: 'Rubin', arch: 'Rubin', tflops: 6250, vram: 288, vram_type: 'HBM4', bw: 22.0, power: 1800, price: 100000, color: 0xffeaa7, unlockValuation: 10_000_000_000 },
     Vera:   { name: 'Vera Rubin', arch: 'Vera', tflops: 15000, vram: 512, vram_type: 'HBM4', bw: 30.0, power: 2500, price: 180000, color: 0xffffff, unlockValuation: 25_000_000_000 }
   },
@@ -173,11 +175,11 @@ const CONFIG = {
 
   // 研究员
   RESEARCHER_TIERS: {
-    junior:   { name: '初级研究员', salary: 3_000_000, effBonus: 0.02, desc: '刚毕业的AI研究员，基础研究能力', unlockValuation: 0 },
-    senior:   { name: '高级研究员', salary: 8_000_000, effBonus: 0.04, desc: '有经验的算法工程师，产出稳定', unlockValuation: 1_000_000_000 },
-    principal:{ name: '首席研究员', salary: 15_000_000, effBonus: 0.06, desc: '顶尖AI科学家，可能带来算法突破', unlockValuation: 5_000_000_000 }
+    junior:   { name: '初级研究员', baseSalary: 3_000_000, effBonus: 0.02, desc: '刚毕业的AI研究员,基础研究能力', unlockValuation: 100_000_000 },
+    senior:   { name: '高级研究员', baseSalary: 8_000_000, effBonus: 0.04, desc: '有经验的算法工程师,产出稳定', unlockValuation: 500_000_000 },
+    principal:{ name: '首席研究员', baseSalary: 15_000_000, effBonus: 0.06, desc: '顶尖AI科学家,可能带来算法突破', unlockValuation: 5_000_000_000 }
   },
-  RESEARCHER_MAX_PER_TIER: 5,
+  RESEARCHER_PRICE_MULTIPLIER: 1.5, // 每次聘请后薪资上涨50%
   RESEARCHER_HIRE_COOLDOWN: 30, // 每次聘请后冷却30天
 
   // 基准测试评估（6大类）

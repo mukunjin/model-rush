@@ -198,8 +198,12 @@ const Scene = {
       this.prevMouse.x = e.clientX;
       this.prevMouse.y = e.clientY;
 
-      this.spherical.theta -= dx * 0.005;
-      this.spherical.phi -= dy * 0.005;
+      // 读取拖动方向设置
+      const inverted = localStorage.getItem('dragDirection') === 'inverted';
+      const mult = inverted ? -1 : 1;
+
+      this.spherical.theta -= dx * 0.005 * mult;
+      this.spherical.phi -= dy * 0.005 * mult;
       this.spherical.phi = Math.max(0.2, Math.min(Math.PI / 2 - 0.05, this.spherical.phi));
       this.updateCameraPosition();
     });
@@ -246,8 +250,13 @@ const Scene = {
         const dy = e.touches[0].clientY - touchStart.y;
         if (Math.abs(dx) > 5 || Math.abs(dy) > 5) this.dragStarted = true;
         touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        this.spherical.theta -= dx * 0.005;
-        this.spherical.phi -= dy * 0.005;
+        
+        // 读取拖动方向设置
+        const inverted = localStorage.getItem('dragDirection') === 'inverted';
+        const mult = inverted ? -1 : 1;
+        
+        this.spherical.theta -= dx * 0.005 * mult;
+        this.spherical.phi -= dy * 0.005 * mult;
         this.spherical.phi = Math.max(0.2, Math.min(Math.PI / 2 - 0.05, this.spherical.phi));
         this.updateCameraPosition();
       } else if (e.touches.length === 2 && pinchDist > 0) {
@@ -276,6 +285,17 @@ const Scene = {
       this.target.z + sp.radius * Math.sin(sp.phi) * Math.sin(sp.theta)
     );
     this.camera.lookAt(this.target);
+  },
+
+  // 更新视觉中性点到中间楼层的中心
+  updateCameraTarget() {
+    const floors = Datacenter.FLOORS;
+    const floorHeight = Datacenter.FLOOR_HEIGHT;
+    // 奇数层取中间层，偶数层取偏下层
+    const middleFloorIndex = Math.floor((floors - 1) / 2);
+    const middleFloorCenterY = middleFloorIndex * floorHeight + floorHeight / 2;
+    this.target.y = middleFloorCenterY;
+    this.updateCameraPosition();
   },
 
   setupLights() {

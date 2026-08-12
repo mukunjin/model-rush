@@ -66,8 +66,17 @@ const Economy = {
     const deployedCount = s.deployedModels.filter(model => model.deployed).length;
     const network = deployedCount * CONFIG.NETWORK_DAILY_COST_PER_DEPLOYED_MODEL;
     const r = s.researchers;
-    const researcherSalary = r.junior * CONFIG.RESEARCHER_TIERS.junior.salary +
-      r.senior * CONFIG.RESEARCHER_TIERS.senior.salary + r.principal * CONFIG.RESEARCHER_TIERS.principal.salary;
+
+    // 计算研究员薪资（指数上涨）
+    let researcherSalary = 0;
+    for (const tier of ['junior', 'senior', 'principal']) {
+      const count = r[tier] || 0;
+      const baseSalary = CONFIG.RESEARCHER_TIERS[tier].baseSalary;
+      for (let i = 0; i < count; i++) {
+        researcherSalary += Math.ceil(baseSalary * Math.pow(CONFIG.RESEARCHER_PRICE_MULTIPLIER, i));
+      }
+    }
+
     const salary = (CONFIG.BASE_SALARY + s.gpuTotal * CONFIG.SALARY_PER_GPU + researcherSalary) / 30;
     const rent = CONFIG.BASE_RENT / 30;
     return { electricity, network, salary, rent, total: electricity + network + salary + rent };
@@ -155,13 +164,6 @@ const Economy = {
       return false;
     }
 
-    // 检查GPU型号上限
-    const currentCount = s.gpuInventory[gpuType] || 0;
-    if (currentCount + gpuCount > CONFIG.GPU_MAX_PER_TYPE) {
-      UI.toast(gpu.name + '数量已达上限(' + CONFIG.GPU_MAX_PER_TYPE + '张)!');
-      return false;
-    }
-
     // 检查数据中心机架位容量（防止出现"隐形GPU"：库存有但3D无法放置）
     let canPlace = 0;
     for (let floor = 0; floor < Datacenter.FLOORS; floor++) {
@@ -205,13 +207,15 @@ const Economy = {
 
   expandPower(mw) {
     const s = Game.state;
-    const cost = mw * CONFIG.POWER_EXPAND_COST_PER_MW;
+    const baseCost = CONFIG.POWER_EXPAND_BASE_COST_PER_MW * Math.pow(CONFIG.POWER_EXPAND_EXPONENT, s.powerExpands || 0);
+    const cost = mw * baseCost;
     if (s.cash < cost) {
       UI.toast('资金不足!');
       return false;
     }
     s.cash -= cost;
     s.powerCapacityMW += mw;
+    s.powerExpands = (s.powerExpands || 0) + 1;
     Datacenter.updatePowerRoom();
     Game.addLog('扩容供电 +' + mw + 'MW, 花费 $' + Economy.formatMoney(cost));
     UI.update();
@@ -220,13 +224,15 @@ const Economy = {
 
   expandCooling(mw) {
     const s = Game.state;
-    const cost = mw * CONFIG.COOLING_EXPAND_COST_PER_MW;
+    const baseCost = CONFIG.COOLING_EXPAND_BASE_COST_PER_MW * Math.pow(CONFIG.COOLING_EXPAND_EXPONENT, s.coolingExpands || 0);
+    const cost = mw * baseCost;
     if (s.cash < cost) {
       UI.toast('资金不足!');
       return false;
     }
     s.cash -= cost;
     s.coolingCapacityMW += mw;
+    s.coolingExpands = (s.coolingExpands || 0) + 1;
     Datacenter.updateCoolingTower();
     Game.addLog('扩容冷却 +' + mw + 'MW, 花费 $' + Economy.formatMoney(cost));
     UI.update();
@@ -237,15 +243,13 @@ const Economy = {
     const s = Game.state;
     const tierConfig = CONFIG.RESEARCHER_TIERS[tier];
     if (!tierConfig) return false;
+
     // 市值解锁检查
     if (s.valuation < tierConfig.unlockValuation) {
-      UI.toast(tierConfig.name + ' 需要市值 $' + Economy.formatMoney(tierConfig.unlockValuation) + ' 解锁');
+      UI.toast(tierConfig.name + ' 需要市值 $' + Economy.formatMoney(tierConfig.unlockValuation) + ' 解锁 (当前 $' + Economy.formatMoney(s.valuation) + ')');
       return false;
     }
-    if (s.researchers[tier] >= CONFIG.RESEARCHER_MAX_PER_TIER) {
-      UI.toast(tierConfig.name + '已达上限!');
-      return false;
-    }
+
     // 冷却检查
     const daysSinceLastHire = s.day - s.lastHireDay;
     if (s.lastHireDay > 0 && daysSinceLastHire < CONFIG.RESEARCHER_HIRE_COOLDOWN) {
@@ -253,9 +257,20 @@ const Economy = {
       UI.toast('招聘冷却中，还需 ' + remaining + ' 天');
       return false;
     }
+
+    // 计算当前薪资（指数上涨）
+    const currentCount = s.researchers[tier] || 0;
+    const salary = Math.ceil(tierConfig.baseSalary * Math.pow(CONFIG.RESEARCHER_PRICE_MULTIPLIER, currentCount));
+
+    // 检查资金
+    if (s.cash < salary) {
+      UI.toast('资金不足! 需要月薪 $' + Economy.formatMoney(salary));
+      return false;
+    }
+
     s.researchers[tier]++;
     s.lastHireDay = s.day;
-    Game.addLog('聘请' + tierConfig.name + ' (#' + s.researchers[tier] + '), 月薪 $' + Economy.formatMoney(tierConfig.salary));
+    Game.addLog('聘请' + tierConfig.name + ' (#' + s.researchers[tier] + '), 月薪 $' + Economy.formatMoney(salary));
     UI.update();
     return true;
   },
@@ -307,6 +322,10 @@ const Economy = {
     s.cash -= cost;
     s.datacenterExpands++;
     const expansion = Datacenter.expand();
+    // 更新视觉中性点到中间楼层
+    if (typeof Scene !== 'undefined' && Scene.updateCameraTarget) {
+      Scene.updateCameraTarget();
+    }
     Game.addLog('加盖第 ' + Datacenter.FLOORS + ' 层：新增 ' + expansion.addedSlots + ' 个 GPU 位（总计 ' + expansion.totalSlots + ' 位），花费 $' + Economy.formatMoney(cost));
     UI.update();
     return true;

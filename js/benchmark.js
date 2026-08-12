@@ -59,7 +59,10 @@ const Benchmark = {
     const params = training.params || (CONFIG.MODEL_SCALES[training.scale] ? CONFIG.MODEL_SCALES[training.scale].params : 70e9);
     const logParams = Math.log10(params);
 
-    // 通用质量加成（来自数据采集质量、技术和对齐方法，上限 1.55）
+    // 难度系数：整体降低分数，避免轻易满分
+    const DIFFICULTY_MULTIPLIER = 0.75;
+
+    // 通用质量加成（来自数据采集质量、技术和对齐方法，上限降低到 1.35）
     let generalQuality = 1.0 + (training.dataQualityScoreMod || 0);
     for (const techKey of (training.selectedTechs || [])) {
       const tech = CONFIG.TECH_RESEARCH[techKey];
@@ -72,7 +75,7 @@ const Benchmark = {
     } else if (training.alignmentMethod === 'dpo') {
       generalQuality += CONFIG.ALIGNMENT_METHODS.dpo.qualityBonus;
     }
-    generalQuality = Math.min(generalQuality, 1.55);
+    generalQuality = Math.min(generalQuality, 1.35);
 
     const breakdown = {};
     const benchmarks = CONFIG.BENCHMARKS;
@@ -86,34 +89,37 @@ const Benchmark = {
     const uniformShare = 1 / Object.keys(benchmarks).length; // 均匀分布基准值
 
     for (const [key, bm] of Object.entries(benchmarks)) {
-      // 基础分：模型越大基础分越高，使用对数衰减避免线性膨胀
-      let catScore = 18 + Math.max(0, logParams - 9) * 5.5;
+      // 基础分：模型越大基础分越高，但增长率降低（从5.5降到3.5）
+      let catScore = 15 + Math.max(0, logParams - 9) * 3.5;
 
       // 应用通用质量加成
       catScore *= generalQuality;
 
-      // 数据类别分布加成：某类数据占比越高，对应类别得分越高（钳制±10%）
+      // 数据类别分布加成：某类数据占比越高，对应类别得分越高（钳制±8%，从10%降低）
       if (dataTotal > 0) {
         const share = (dataDist[key] || 0) / dataTotal;
-        const bonusFactor = 1 + (share - uniformShare) * 0.6;
-        catScore *= Math.max(0.9, Math.min(1.10, bonusFactor));
+        const bonusFactor = 1 + (share - uniformShare) * 0.5;
+        catScore *= Math.max(0.92, Math.min(1.08, bonusFactor));
       }
 
-      // 应用特定类别技术加成
+      // 应用特定类别技术加成（效果降低30%）
       let catTechBonus = 1.0;
       for (const techKey of (training.selectedTechs || [])) {
         const bonusMap = this.CATEGORY_TECH_BONUSES[techKey];
         if (bonusMap && bonusMap[key]) {
-          catTechBonus += bonusMap[key] * Research.getTechLevel(techKey);
+          catTechBonus += bonusMap[key] * Research.getTechLevel(techKey) * 0.7;
         }
       }
       catScore *= catTechBonus;
 
-      // 中断惩罚
-      catScore *= (1 - (training.interruptions || 0) * 0.05);
+      // 中断惩罚（从5%增加到8%）
+      catScore *= (1 - (training.interruptions || 0) * 0.08);
 
-      // 随机波动（每个类别独立）
-      catScore *= (0.95 + Math.random() * 0.10);
+      // 随机波动（每个类别独立，范围从±5%扩大到±8%）
+      catScore *= (0.92 + Math.random() * 0.16);
+
+      // 应用难度系数
+      catScore *= DIFFICULTY_MULTIPLIER;
 
       // 上限
       catScore = Math.max(0, Math.min(100, catScore));

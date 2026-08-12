@@ -52,6 +52,7 @@
     <span id="company-name-display" class="text-accent font-bold text-base tracking-wide">Model Rush</span>
     <span>现金 <span id="cash" class="text-accent font-mono">$500.00M</span></span>
     <span>市值 <span id="valuation" class="text-amber font-mono">$500.00M</span></span>
+    <span>算力 <span id="tflops" class="text-cyan font-mono">0</span> TFLOPS</span>
     <span>第 <span id="day" class="text-white font-mono">1</span> 天</span>
     <span class="ml-auto flex gap-1">
       <button onclick="Game.setSpeed(0)" id="btn-pause" class="speed-btn px-2 py-0.5 rounded border border-border hover:border-accent text-xs">暂停</button>
@@ -206,8 +207,7 @@
     <button onclick="UI.showModal('new-training')" class="action-btn">新建训练</button>
     <button onclick="Economy.fundraise()" class="action-btn" id="btn-fundraise">发起融资</button>
     <span class="text-muted mx-1">|</span>
-    <button onclick="SaveSystem.save(false)" class="action-btn">保存游戏</button>
-    <button onclick="UI.showDeleteConfirm()" class="action-btn text-danger hover:border-danger">删除存档</button>
+    <button onclick="UI.showSettingsModal()" class="action-btn">设置</button>
   </div>
 
   <!-- 模态框容器 -->
