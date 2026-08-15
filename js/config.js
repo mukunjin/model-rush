@@ -13,15 +13,15 @@ const CONFIG = {
   // 供电
   INITIAL_POWER_CAPACITY_MW: 1,
   POWER_EXPAND_BASE_COST_PER_MW: 50_000_000,
-  POWER_EXPAND_EXPONENT: 1.3,
+  POWER_EXPAND_EXPONENT: 1.8, // 供电扩容指数增长
   COOLING_RATIO: 0.30,
   INITIAL_COOLING_CAPACITY_MW: 1.5,
   COOLING_EXPAND_BASE_COST_PER_MW: 20_000_000,
-  COOLING_EXPAND_EXPONENT: 1.25,
+  COOLING_EXPAND_EXPONENT: 1.8, // 冷却扩容指数增长
 
   // 数据中心扩容：往上加一层，每层固定 400 个机架位，成本逐层递增。
   DATACENTER_EXPAND_BASE_COST: 75_000_000,
-  DATACENTER_EXPAND_EXPONENT: 1.25,
+  DATACENTER_EXPAND_EXPONENT: 1.8, // 每层楼成本指数增长
   DATACENTER_SLOTS_PER_FLOOR: 400,
   DATACENTER_FLOOR_ROWS: 20,
   DATACENTER_FLOOR_COLS: 20,
@@ -176,10 +176,10 @@ const CONFIG = {
   // 研究员
   RESEARCHER_TIERS: {
     junior:   { name: '初级研究员', baseSalary: 3_000_000, effBonus: 0.02, desc: '刚毕业的AI研究员,基础研究能力', unlockValuation: 100_000_000 },
-    senior:   { name: '高级研究员', baseSalary: 8_000_000, effBonus: 0.04, desc: '有经验的算法工程师,产出稳定', unlockValuation: 500_000_000 },
-    principal:{ name: '首席研究员', baseSalary: 15_000_000, effBonus: 0.06, desc: '顶尖AI科学家,可能带来算法突破', unlockValuation: 5_000_000_000 }
+    senior:   { name: '高级研究员', baseSalary: 8_000_000, effBonus: 0.04, desc: '有经验的算法工程师,产出稳定', unlockValuation: 5_000_000_000 },
+    principal:{ name: '首席研究员', baseSalary: 15_000_000, effBonus: 0.06, desc: '顶尖AI科学家,可能带来算法突破', unlockValuation: 20_000_000_000 }
   },
-  RESEARCHER_PRICE_MULTIPLIER: 1.5, // 每次聘请后薪资上涨50%
+  RESEARCHER_PRICE_MULTIPLIER: 2.0, // 每次聘请后薪资翻倍（指数增长）
   RESEARCHER_HIRE_COOLDOWN: 30, // 每次聘请后冷却30天
 
   // 基准测试评估（6大类）
@@ -229,14 +229,26 @@ const CONFIG = {
     { name: '梯度消失', desc: '模型深度导致梯度消失，需要调整架构', effect: 'gradient_vanishing', penalty: 0.04 }
   ],
 
-  // 数据采集（从零开始的完整训练流程）
+  // 数据采集：每个分类下包含不同质量等级的来源（互联网内容不等于低质量）
+  DATA_SOURCE_CATEGORIES: ['通用', '知识', '编程', '推理', '多语言'],
   DATA_SOURCES: {
-    web_crawl:   { name: '网页爬取', desc: '互联网公开文本，量大但质量参差不齐', cost: 5_000_000, qualityBase: 0.55, tokens: 500e9, category: '通用' },
-    books:       { name: '书籍语料', desc: '高质量出版书籍，文学与知识类', cost: 15_000_000, qualityBase: 0.85, tokens: 100e9, category: '知识' },
-    code_repos:  { name: '代码仓库', desc: 'GitHub开源代码，提升编程能力', cost: 20_000_000, qualityBase: 0.80, tokens: 150e9, category: '编程' },
-    academic:    { name: '学术论文', desc: 'arXiv等学术论文，提升推理能力', cost: 25_000_000, qualityBase: 0.90, tokens: 30e9, category: '推理' },
-    synthetic:   { name: '合成数据', desc: '用现有模型生成高质量训练数据', cost: 30_000_000, qualityBase: 0.75, tokens: 200e9, category: '通用' },
-    multilingual:{ name: '多语言语料', desc: '中英日韩等多语言文本', cost: 10_000_000, qualityBase: 0.65, tokens: 300e9, category: '多语言' }
+    // 通用类：低 → 高
+    web_crawl:     { name: '网页爬取', desc: '互联网公开文本，量大但质量参差不齐', cost: 5_000_000, qualityBase: 0.55, tokens: 500e9, category: '通用' },
+    web_curated:   { name: '精选网页', desc: '经人工筛选的高质量网页内容', cost: 12_000_000, qualityBase: 0.75, tokens: 200e9, category: '通用' },
+    encyclopedia:  { name: '百科知识库', desc: '结构化百科与知识条目，准确可靠', cost: 18_000_000, qualityBase: 0.85, tokens: 80e9, category: '通用' },
+    synthetic:     { name: '合成数据', desc: '用现有模型生成的高质量训练数据', cost: 30_000_000, qualityBase: 0.80, tokens: 200e9, category: '通用' },
+    // 知识类
+    blogs:         { name: '专业博客', desc: '领域专家撰写的深度文章', cost: 10_000_000, qualityBase: 0.70, tokens: 120e9, category: '知识' },
+    books:         { name: '书籍语料', desc: '高质量出版书籍，文学与知识类', cost: 15_000_000, qualityBase: 0.85, tokens: 100e9, category: '知识' },
+    // 编程类
+    code_snippets: { name: '代码片段', desc: '网络收集的代码示例，质量不一', cost: 8_000_000, qualityBase: 0.60, tokens: 100e9, category: '编程' },
+    code_repos:    { name: '开源代码仓库', desc: 'GitHub高质量开源项目代码', cost: 20_000_000, qualityBase: 0.85, tokens: 150e9, category: '编程' },
+    // 推理类
+    qa_community:  { name: '问答社区', desc: 'Stack Overflow等问答，含推理过程', cost: 12_000_000, qualityBase: 0.70, tokens: 60e9, category: '推理' },
+    academic:      { name: '学术论文', desc: 'arXiv等学术论文，提升推理能力', cost: 25_000_000, qualityBase: 0.90, tokens: 30e9, category: '推理' },
+    // 多语言类
+    web_multilingual: { name: '多语言网页', desc: '互联网多语言文本，覆盖面广', cost: 6_000_000, qualityBase: 0.55, tokens: 250e9, category: '多语言' },
+    multilingual:  { name: '多语言精选语料', desc: '中英日韩等精选高质量文本', cost: 14_000_000, qualityBase: 0.80, tokens: 100e9, category: '多语言' }
   },
 
   // 事件触发间隔

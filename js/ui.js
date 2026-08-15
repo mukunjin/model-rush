@@ -286,15 +286,6 @@ const UI = {
     }
     el.innerHTML = html || '<div class="text-muted italic">暂无研发项目</div>';
 
-    const unlockedEl = document.getElementById('unlocked-techs');
-    const techStatus = Research.getTechStatus();
-    let unlockedHtml = '';
-    for (const [key, tech] of Object.entries(techStatus)) {
-      if (tech.status === 'unlocked') {
-        unlockedHtml += '<div class="text-xs text-accent">' + tech.name + ' <span class="text-muted">' + tech.effect + '</span></div>';
-      }
-    }
-    unlockedEl.innerHTML = unlockedHtml || '<div class="text-muted italic">暂无已解锁技术</div>';
   },
 
   updateGPUInventory() {
@@ -1237,40 +1228,47 @@ const UI = {
     html += '<div class="progress-bar mt-2"><div class="progress-fill" style="width:' + (effectiveQuality * 100) + '%;background:' + qualityColor + '"></div></div>';
     html += '</div>';
 
-    // 数据源列表
-    html += '<div class="text-xs text-muted uppercase mb-1">数据源 (点击选择)</div>';
-    html += '<div class="grid grid-cols-2 gap-2 mb-3">';
+    // 数据源列表（按分类分组，组内按质量从低到高排序）
+    html += '<div class="text-xs text-muted uppercase mb-1">数据源 (点击选择，按分类分组)</div>';
     const selectedSrc = UI._selectedDataSource || 'web_crawl';
-    for (const [key, src] of Object.entries(CONFIG.DATA_SOURCES)) {
-      const current = DataCollection.state.sources[key] || 0;
-      // 统一质量颜色阈值
-      const qColor = src.qualityBase >= 0.85 ? '#00cc66' : src.qualityBase >= 0.75 ? '#e6a817' : src.qualityBase >= 0.60 ? '#e8a838' : '#e74c3c';
-      const hasData = current > 0;
-      const isSelected = key === selectedSrc;
-      // 选中状态: 亮绿边框+高亮背景; 已采集: 绿边框+淡绿背景; 默认: 灰边框
-      let borderColor, bgColor;
-      if (isSelected) {
-        borderColor = '#00ff88';
-        bgColor = 'rgba(0,255,136,0.15)';
-      } else if (hasData) {
-        borderColor = '#00cc66';
-        bgColor = 'rgba(0,204,102,0.05)';
-      } else {
-        borderColor = '#333';
-        bgColor = 'transparent';
+    for (const category of CONFIG.DATA_SOURCE_CATEGORIES) {
+      const catSources = Object.entries(CONFIG.DATA_SOURCES)
+        .filter(([, src]) => src.category === category)
+        .sort((a, b) => a[1].qualityBase - b[1].qualityBase);
+      if (catSources.length === 0) continue;
+      html += '<div class="text-xs font-bold text-accent mb-1 mt-2">▍' + category + '</div>';
+      html += '<div class="grid grid-cols-2 gap-2 mb-2">';
+      for (const [key, src] of catSources) {
+        const current = DataCollection.state.sources[key] || 0;
+        // 统一质量颜色阈值
+        const qColor = src.qualityBase >= 0.85 ? '#00cc66' : src.qualityBase >= 0.75 ? '#e6a817' : src.qualityBase >= 0.60 ? '#e8a838' : '#e74c3c';
+        const hasData = current > 0;
+        const isSelected = key === selectedSrc;
+        // 选中状态: 亮绿边框+高亮背景; 已采集: 绿边框+淡绿背景; 默认: 灰边框
+        let borderColor, bgColor;
+        if (isSelected) {
+          borderColor = '#00ff88';
+          bgColor = 'rgba(0,255,136,0.15)';
+        } else if (hasData) {
+          borderColor = '#00cc66';
+          bgColor = 'rgba(0,204,102,0.05)';
+        } else {
+          borderColor = '#333';
+          bgColor = 'transparent';
+        }
+        html += '<div class="data-source-option p-2 border rounded cursor-pointer text-xs" style="border-color:' + borderColor + ';background:' + bgColor + ';border-width:2px" data-source="' + key + '">' +
+          '<div class="flex justify-between items-center"><span class="font-bold">' + src.name + '</span>' +
+          '<span style="font-size:10px;padding:1px 6px;border:1px solid ' + qColor + ';color:' + qColor + ';border-radius:3px">' + (src.qualityBase >= 0.85 ? '高质量' : src.qualityBase >= 0.70 ? '中质量' : '低质量') + '</span></div>' +
+          '<div class="text-muted mt-0.5">' + src.desc + '</div>' +
+          '<div class="flex justify-between mt-1">' +
+          '<span style="color:' + qColor + '">质量 ' + (src.qualityBase * 100).toFixed(0) + '%</span>' +
+          '<span class="text-muted">$' + Economy.formatMoney(src.cost) + '/10B</span>' +
+          '</div>' +
+          (hasData ? '<div class="mt-0.5 font-mono" style="color:#00cc66">已采: ' + current + 'B</div>' : '') +
+          '</div>';
       }
-      html += '<div class="data-source-option p-2 border rounded cursor-pointer text-xs" style="border-color:' + borderColor + ';background:' + bgColor + ';border-width:2px" data-source="' + key + '">' +
-        '<div class="flex justify-between items-center"><span class="font-bold">' + src.name + '</span>' +
-        '<span style="font-size:10px;padding:1px 6px;border:1px solid ' + qColor + ';color:' + qColor + ';border-radius:3px">' + src.category + '</span></div>' +
-        '<div class="text-muted mt-0.5">' + src.desc + '</div>' +
-        '<div class="flex justify-between mt-1">' +
-        '<span style="color:' + qColor + '">质量 ' + (src.qualityBase * 100).toFixed(0) + '%</span>' +
-        '<span class="text-muted">$' + Economy.formatMoney(src.cost) + '/10B</span>' +
-        '</div>' +
-        (hasData ? '<div class="mt-0.5 font-mono" style="color:#00cc66">已采: ' + current + 'B</div>' : '') +
-        '</div>';
+      html += '</div>';
     }
-    html += '</div>';
 
     // 采集数量
     html += '<div class="flex items-center gap-2 mb-2">' +
@@ -1350,19 +1348,18 @@ const UI = {
     html += '<div class="mb-3"><label class="text-xs text-muted">模型名称</label>' +
       '<input id="train-name" type="text" class="modal-input" value="Model-' + s.day + '" maxlength="20"></div>';
 
-    // 模型参数（自由滑动条）
+    // 模型参数（数字输入 + 单位选择）
     html += '<div class="mb-3"><label class="text-xs text-muted">模型参数规模</label>' +
-      '<div class="mt-2 mb-1 flex items-center gap-3">' +
-      '<input id="train-params-slider" type="range" min="' + CONFIG.PARAMS_MIN_B + '" max="' + CONFIG.PARAMS_MAX_B + '" step="1" value="70" class="scale-slider flex-1">' +
-      '<span id="train-params-label" class="text-xs font-bold text-accent whitespace-nowrap">70B</span>' +
+      '<div class="mt-2 mb-1 flex items-center gap-2">' +
+      '<input id="train-params-input" type="number" class="modal-input w-28" value="70" min="1" max="3000" step="any">' +
+      '<div class="flex gap-1" id="train-params-unit-group">' +
+      '<button type="button" class="param-unit-btn px-2 py-1 text-xs border border-border rounded cursor-pointer" data-unit="M">M</button>' +
+      '<button type="button" class="param-unit-btn px-2 py-1 text-xs border border-border rounded cursor-pointer border-accent bg-accent/10 text-accent" data-unit="B">B</button>' +
+      '<button type="button" class="param-unit-btn px-2 py-1 text-xs border border-border rounded cursor-pointer" data-unit="T">T</button>' +
       '</div>' +
-      '<div class="relative h-4 text-[10px] text-muted mt-1">' +
-      '<span class="absolute" style="left:0%">1B</span>' +
-      '<span class="absolute -translate-x-1/2" style="left:24.97%">750B</span>' +
-      '<span class="absolute -translate-x-1/2" style="left:49.98%">1.5T</span>' +
-      '<span class="absolute -translate-x-1/2" style="left:74.99%">2.25T</span>' +
-      '<span class="absolute -translate-x-full" style="left:100%">3T</span>' +
+      '<span id="train-params-label" class="text-xs font-bold text-accent whitespace-nowrap ml-1">70B</span>' +
       '</div>' +
+      '<div id="train-params-range-hint" class="text-[10px] text-muted mt-1">范围: 1 ~ 3000 B</div>' +
       '<div id="train-params-info" class="text-xs text-muted mt-1">参数 70B | 训练数据 1.4T tokens | 最少推理 14 GPU</div>' +
       '</div>';
 
@@ -1458,10 +1455,19 @@ const UI = {
     let selectedOpen = false;
     let selectedTechs = [];
 
-    // 自由参数滑动条
-    const slider = document.getElementById('train-params-slider');
+    // 参数输入（数字输入框 + 单位选择）
+    const paramsInput = document.getElementById('train-params-input');
     const paramsLabel = document.getElementById('train-params-label');
     const paramsInfo = document.getElementById('train-params-info');
+    const rangeHint = document.getElementById('train-params-range-hint');
+    let currentUnit = 'B';
+
+    // 各单位的数字范围限制（换算为B后的有效范围 1B ~ 3000B）
+    const UNIT_RANGES = {
+      M: { min: 1000, max: 3000000, toB: v => v / 1000 },
+      B: { min: 1, max: 3000, toB: v => v },
+      T: { min: 0.001, max: 3, toB: v => v * 1000 },
+    };
 
     // GPU分配更新（提前定义，供滑动条联动使用）
     const updateAllocStats = () => {
@@ -1508,8 +1514,21 @@ const UI = {
       document.getElementById('train-power-estimate').textContent = estPower.toFixed(2);
     };
 
+    // 根据当前单位更新输入框范围提示和min/max属性
+    const applyUnitRange = () => {
+      const r = UNIT_RANGES[currentUnit];
+      paramsInput.min = r.min;
+      paramsInput.max = r.max;
+      rangeHint.textContent = '范围: ' + r.min + ' ~ ' + r.max + ' ' + currentUnit;
+    };
+
     const updateParamsDisplay = () => {
-      const bValue = parseInt(slider.value);
+      let raw = parseFloat(paramsInput.value);
+      const r = UNIT_RANGES[currentUnit];
+      if (isNaN(raw)) raw = r.min;
+      // clamp到当前单位范围（不覆盖输入框，避免干扰打字）
+      raw = Math.min(Math.max(raw, r.min), r.max);
+      const bValue = r.toB(raw); // 换算为B
       selectedParams = bValue * 1e9;
       const labelStr = formatParams(selectedParams);
       paramsLabel.textContent = labelStr;
@@ -1520,7 +1539,33 @@ const UI = {
       paramsInfo.textContent = '参数 ' + labelStr + ' | 训练数据 ' + tokensStr + ' tokens | 最低算力: ' + minTflops.toLocaleString() + ' TFLOPS';
       updateAllocStats();
     };
-    slider.addEventListener('input', updateParamsDisplay);
+
+    paramsInput.addEventListener('input', updateParamsDisplay);
+
+    // 单位切换按钮
+    document.querySelectorAll('.param-unit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentUnit = btn.dataset.unit;
+        // 高亮当前单位
+        document.querySelectorAll('.param-unit-btn').forEach(b => {
+          b.classList.remove('border-accent', 'bg-accent/10', 'text-accent');
+        });
+        btn.classList.add('border-accent', 'bg-accent/10', 'text-accent');
+        // 读取当前B值，换算为新单位
+        const curB = selectedParams / 1e9;
+        let newVal;
+        if (currentUnit === 'M') newVal = curB * 1000;
+        else if (currentUnit === 'T') newVal = curB / 1000;
+        else newVal = curB;
+        // 取合理精度
+        newVal = Math.round(newVal * 1000) / 1000;
+        paramsInput.value = newVal;
+        applyUnitRange();
+        updateParamsDisplay();
+      });
+    });
+
+    applyUnitRange();
     updateParamsDisplay();
 
     // GPU复选框事件
