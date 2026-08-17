@@ -96,6 +96,29 @@
 #modal-overlay { transition: opacity 0.2s; }
 #modal-overlay:not(.hidden) { display: flex !important; }
 
+/* 新手引导 */
+#tutorial-overlay {
+  position: fixed;
+  left: 20px;
+  bottom: 92px;
+  z-index: 30;
+  width: min(440px, calc(100vw - 40px));
+  pointer-events: none;
+}
+.tutorial-card {
+  width: 100%;
+  padding: 22px;
+  border: 1px solid #00ff88;
+  border-radius: 10px;
+  background: #14141f;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+.tutorial-card h2 { margin: 4px 0 10px; color: #00ff88; font-size: 18px; }
+.tutorial-card p { margin: 0; color: #ccc; font-size: 14px; line-height: 1.7; }
+.tutorial-progress { color: #7f8c8d; font-size: 11px; }
+.tutorial-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
 /* 模态框内按钮 */
 .modal-btn {
   padding: 8px 16px;
@@ -390,6 +413,17 @@ body.h-screen { height: 100dvh; }
   }
   #modal-content .modal-btn { min-height: 40px; }
   #modal-content .modal-input { font-size: 14px; }
+
+  /* 新手引导（移动端） */
+  #tutorial-overlay {
+    left: 12px;
+    right: 12px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    width: auto;
+  }
+  .tutorial-card { padding: 18px; }
+  .tutorial-card p { font-size: 13px; }
+  .tutorial-actions .modal-btn { min-height: 42px; padding: 8px 12px; }
 
   /* 启动界面 */
   #startup-overlay > div {

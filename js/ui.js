@@ -2,12 +2,96 @@
 // 作者：mukunjin
 // 仓库：https://github.com/mukunjin/model-rush
 const UI = {
+  TUTORIAL_KEY: 'model_rush_tutorial_completed',
+  tutorialStep: 0,
+  tutorialPreviousSpeed: null,
+  tutorialSteps: [
+    { title: '欢迎来到 Model Rush', tab: 'finance', text: '引导期间游戏已经暂停。你可以一边阅读，一边直接操作页面；完成当前动作后再点“下一步”。' },
+    { title: '第一步：采集数据', tab: 'finance', text: '现在点击底栏“采集数据”。在数据来源卡片里输入数量并点击“采集”，至少收集 10B tokens 才能开始训练；不同来源的质量会影响模型能力。' },
+    { title: '第二步：购买GPU', tab: 'inventory', text: '现在从“GPU 管理”购买 GPU。库存页会显示训练、推理与闲置 GPU；购买前请预留机架位、供电和冷却。' },
+    { title: '第三步：招聘研究员', tab: 'finance', text: '现在从“团队 → 聘请研究员”招聘研究员，他们能提升训练效率。注意：高级研究员需要公司市值达到一定规模才会解锁。' },
+    { title: '第四步：研发技术', tab: 'research', text: '现在从“团队 → 研发技术”选择一项开始研发。研发需要时间推进，所以从这一步起游戏恢复 1X 速度运行。' },
+    { title: '第五步：训练模型', tab: 'training', text: '点击“新建训练”分配 GPU 即可开始训练。训练需要时间，训练完成后模型会出现在待部署列表。' },
+    { title: '第六步：基准测试与部署', tab: 'products', text: '训练完成后先跑基准测试获得评分，再选择满足最低算力要求的 GPU 进行部署赚钱；开源模型也能赚钱，但通常低于闭源模型。' },
+    { title: '开始经营', tab: 'inventory', text: '随着规模扩大，必要时记得扩容供电、冷却和机房（费用会指数上涨）。需要回顾时，可随时点击底栏“新手引导”。' }
+  ],
+
   init() {
     UI.update();
     UI.initPanelTabs();
     UI.initPanelResize();
     UI.initDropdownClose();
     UI.initMobilePanel();
+  },
+
+  activatePanelTab(target) {
+    const tab = document.querySelector('.panel-tab[data-tab="' + target + '"]');
+    if (tab) tab.click();
+  },
+
+  getTutorialStorageKey() {
+    const slotId = (typeof SaveSystem !== 'undefined' && SaveSystem.currentSlotId) || 'default';
+    return UI.TUTORIAL_KEY + '_' + slotId;
+  },
+
+  startTutorial(force = false) {
+    if (!force && localStorage.getItem(UI.getTutorialStorageKey()) === '1') return;
+    if (UI.tutorialPreviousSpeed === null) {
+      UI.tutorialPreviousSpeed = Game.state.speed;
+      Game.state.tutorialPaused = true;
+      Game.setSpeed(0);
+    }
+    UI.tutorialStep = 0;
+    UI.renderTutorialStep();
+  },
+
+  renderTutorialStep() {
+    const step = UI.tutorialSteps[UI.tutorialStep];
+    if (!step) return UI.closeTutorial(true);
+    UI.activatePanelTab(step.tab);
+
+    // 研发技术步：解除引导暂停，恢复 1X 速度让研发推进
+    if (UI.tutorialStep === 4 && Game.state.tutorialPaused) {
+      Game.state.tutorialPaused = false;
+      Game.setSpeed(1);
+    }
+
+    let overlay = document.getElementById('tutorial-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'tutorial-overlay';
+      document.body.appendChild(overlay);
+    }
+    const isLast = UI.tutorialStep === UI.tutorialSteps.length - 1;
+    overlay.innerHTML = '<div class="tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">' +
+      '<div class="tutorial-progress">新手引导 ' + (UI.tutorialStep + 1) + ' / ' + UI.tutorialSteps.length + '</div>' +
+      '<h2 id="tutorial-title">' + step.title + '</h2>' +
+      '<p>' + step.text + '</p>' +
+      '<div class="tutorial-actions">' +
+      '<button class="modal-btn" onclick="UI.closeTutorial(true)">跳过</button>' +
+      (UI.tutorialStep > 0 ? '<button class="modal-btn" onclick="UI.previousTutorialStep()">上一步</button>' : '') +
+      '<button class="modal-btn primary" onclick="UI.nextTutorialStep()">' + (isLast ? '结束引导' : '我完成了，下一步') + '</button>' +
+      '</div></div>';
+  },
+
+  nextTutorialStep() {
+    UI.tutorialStep++;
+    UI.renderTutorialStep();
+  },
+
+  previousTutorialStep() {
+    UI.tutorialStep = Math.max(0, UI.tutorialStep - 1);
+    UI.renderTutorialStep();
+  },
+
+  closeTutorial(completed = true) {
+    if (completed) localStorage.setItem(UI.getTutorialStorageKey(), '1');
+    const overlay = document.getElementById('tutorial-overlay');
+    if (overlay) overlay.remove();
+    const previousSpeed = UI.tutorialPreviousSpeed;
+    UI.tutorialPreviousSpeed = null;
+    Game.state.tutorialPaused = false;
+    if (previousSpeed !== null && Game.state.speed === 0) Game.setSpeed(previousSpeed);
   },
 
   // 移动端面板切换

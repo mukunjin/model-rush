@@ -9,6 +9,7 @@ const Game = {
     day: 1,
     speed: 1, // 0=pause, 1=1x, 2=2x, 4=4x
     running: false,
+    tutorialPaused: false, // 新手引导期间强制暂停，避免误触速度控制后继续结算
     elapsed: 0, // 当前游戏天内累计真实秒数
     lastFrame: 0,
 
@@ -86,7 +87,7 @@ const Game = {
       SaveSystem.save(true);
     }
 
-    if (this.state.speed === 0) {
+    if (this.state.speed === 0 || this.state.tutorialPaused) {
       Scene.render();
       return;
     }
@@ -167,6 +168,7 @@ const Game = {
   },
 
   setSpeed(speed) {
+    if (this.state.tutorialPaused && speed !== 0) return;
     this.state.speed = speed;
     document.querySelectorAll('.speed-btn').forEach(b => {
       b.classList.remove('bg-accent/10', 'text-accent', 'border-accent');

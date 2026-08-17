@@ -60,6 +60,8 @@ function initMain() {
       SaveSystem.save(true);
       UI.update();
       overlay.style.display = 'none';
+      // 首次开局时展示流程引导；已完成过引导的玩家不会重复打扰。
+      setTimeout(() => UI.startTutorial(), 150);
     } catch (e) {
       Game.state.running = false;
       console.error('游戏初始化失败', e);
@@ -89,6 +91,8 @@ function initMain() {
       Game.state.companyName = '新公司';
       document.getElementById('company-name-display').textContent = '新公司';
       Game.init();
+      // 没有有效存档，等同于新游戏：触发新手引导
+      setTimeout(() => UI.startTutorial(), 150);
     } else {
       document.getElementById('company-name-display').textContent = Game.state.companyName;
       Game.loop(performance.now());

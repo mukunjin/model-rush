@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Model Rush</title>
+  <link rel="icon" href="assets/favicon.ico">
   <script data-cfasync="false" src="https://cdn.tailwindcss.com"></script>
   <script data-cfasync="false" src="https://unpkg.com/three@0.148.0/build/three.min.js"></script>
   <link rel="stylesheet" href="css/style.css?v=15">
@@ -202,6 +203,7 @@
     <button onclick="UI.showModal('collect-data')" class="action-btn">采集数据</button>
     <button onclick="UI.showModal('new-training')" class="action-btn">新建训练</button>
     <button onclick="Economy.fundraise()" class="action-btn" id="btn-fundraise">发起融资</button>
+    <button onclick="UI.startTutorial(true)" class="action-btn">新手引导</button>
     <span class="text-muted mx-1">|</span>
     <button onclick="UI.showSettingsModal()" class="action-btn">设置</button>
   </div>
@@ -217,7 +219,7 @@
 
   <!-- 禁用 Cloudflare Rocket Loader 对游戏脚本的延迟改写，保证启动事件按顺序绑定。 -->
   <script data-cfasync="false" src="js/config.js?v=17"></script>
-  <script data-cfasync="false" src="js/game.js?v=16"></script>
+  <script data-cfasync="false" src="js/game.js?v=17"></script>
   <script data-cfasync="false" src="js/economy.js?v=19"></script>
   <script data-cfasync="false" src="js/training.js?v=18"></script>
   <script data-cfasync="false" src="js/benchmark.js?v=15"></script>
@@ -227,7 +229,7 @@
   <script data-cfasync="false" src="js/save.js?v=17"></script>
   <script data-cfasync="false" src="js/scene.js?v=16"></script>
   <script data-cfasync="false" src="js/datacenter.js?v=14"></script>
-  <script data-cfasync="false" src="js/ui.js?v=20"></script>
-  <script data-cfasync="false" src="js/main.js?v=15"></script>
+  <script data-cfasync="false" src="js/ui.js?v=22"></script>
+  <script data-cfasync="false" src="js/main.js?v=17"></script>
 </body>
 </html>

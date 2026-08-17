@@ -1,5 +1,18 @@
 # Model Rush
 
+<p align="center">
+  <img alt="Model Rush" src="assets/favicon.png" width="80">
+</p>
+
+<p align="center">
+  <img alt="HTML5" src="https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white">
+  <img alt="CSS3" src="https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white">
+  <img alt="JavaScript" src="https://img.shields.io/badge/JavaScript-ES6%2B-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black">
+  <img alt="Three.js" src="https://img.shields.io/badge/Three.js-0.148-000000?style=for-the-badge&logo=threedotjs&logoColor=white">
+  <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-3.x-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white">
+  <img alt="LocalStorage" src="https://img.shields.io/badge/存储-LocalStorage-5391FE?style=for-the-badge&logo=localstorage&logoColor=white">
+</p>
+
 AI 大模型训练模拟器。从零开始，体验完整的 AI 大模型研发流程：采集数据、购买 GPU、研发技术、训练模型、跑基准测试。
 
 > 这不是经营游戏，这是训练模拟器。核心乐趣在于研究技术路线、优化训练参数、挑战更高基准得分。
@@ -146,6 +159,8 @@ python -m http.server 8000
 model-rush/
 ├── index.html
 ├── README.md
+├── assets/
+│   └── favicon.ico
 ├── css/
 │   └── style.css
 └── js/
