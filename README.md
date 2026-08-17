@@ -9,7 +9,7 @@
   <img alt="CSS3" src="https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white">
   <img alt="JavaScript" src="https://img.shields.io/badge/JavaScript-ES6%2B-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black">
   <img alt="Three.js" src="https://img.shields.io/badge/Three.js-0.148-000000?style=for-the-badge&logo=threedotjs&logoColor=white">
-  <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-3.x-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white">
+  <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white">
   <img alt="LocalStorage" src="https://img.shields.io/badge/存储-LocalStorage-5391FE?style=for-the-badge&logo=localstorage&logoColor=white">
 </p>
 
