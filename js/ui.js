@@ -470,18 +470,38 @@ const UI = {
     }
   },
 
+  // 通用确认弹窗
+  showConfirmModal(title, message, onConfirm, confirmText) {
+    const html = '<h2 class="text-lg font-bold text-danger mb-3">' + title + '</h2>' +
+      '<div class="text-sm text-muted mb-4">' + message + '</div>' +
+      '<div class="flex gap-2 justify-end">' +
+      '<button id="confirm-cancel" class="modal-btn">取消</button>' +
+      '<button id="confirm-ok" class="modal-btn" style="border-color:#e74c3c;color:#e74c3c">' + (confirmText || '确认') + '</button>' +
+      '</div>';
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+    document.getElementById('modal-close-btn').classList.remove('hidden');
+    document.getElementById('confirm-cancel').addEventListener('click', () => UI.hideModal());
+    document.getElementById('confirm-ok').addEventListener('click', () => {
+      UI.hideModal();
+      onConfirm();
+    });
+  },
+
   removeDeployedModel(idx) {
     const s = Game.state;
     const model = s.deployedModels[idx];
     if (!model) return;
     const freedGPUs = model.deploymentGPUs ? Object.values(model.deploymentGPUs).reduce((a, b) => a + b, 0) : 0;
-    s.deployedModels.splice(idx, 1);
-    model.deployed = false;
-    model.deploymentGPUs = null;
-    if (!s.completedModels.includes(model)) s.completedModels.push(model);
-    Game.addLog('下架模型: ' + model.name + ' (释放 ' + freedGPUs + ' GPU，已移回待部署列表)');
-    UI.toast('已下架 ' + model.name + ', 可稍后手动重新部署');
-    UI.update();
+    UI.showConfirmModal('下架模型', '确定要下架 "' + (model.name || '未命名模型') + '" 吗？将释放 ' + freedGPUs + ' 个推理 GPU，模型会移回待部署列表，期间不再产生收入。', () => {
+      s.deployedModels.splice(idx, 1);
+      model.deployed = false;
+      model.deploymentGPUs = null;
+      if (!s.completedModels.includes(model)) s.completedModels.push(model);
+      Game.addLog('下架模型: ' + model.name + ' (释放 ' + freedGPUs + ' GPU，已移回待部署列表)');
+      UI.toast('已下架 ' + model.name + ', 可稍后手动重新部署');
+      UI.update();
+    }, '确认下架');
   },
 
   deployCompletedModel(index) {
@@ -503,10 +523,12 @@ const UI = {
       UI.toast('该模型已部署，无法删除');
       return;
     }
-    s.completedModels.splice(index, 1);
-    Game.addLog('已删除模型: ' + model.name);
-    UI.toast('模型已删除');
-    UI.update();
+    UI.showConfirmModal('删除模型', '确定要永久删除 "' + (model.name || '未命名模型') + '" 吗？此操作不可撤销，模型权重将被销毁。', () => {
+      s.completedModels.splice(index, 1);
+      Game.addLog('已删除模型: ' + model.name);
+      UI.toast('模型已删除');
+      UI.update();
+    }, '确认删除');
   },
 
   getModelKey(model) {
@@ -1110,7 +1132,8 @@ const UI = {
       '<input id="power-mw" type="number" class="modal-input w-24" value="5" min="1" max="100">' +
       '<span class="text-xs text-muted">MW</span>' +
       '</div>';
-    html += '<div class="text-xs text-muted mb-3">预计花费: <span id="power-cost" class="text-accent">$250M</span></div>';
+    const initCost = 5 * baseCost;
+    html += '<div class="text-xs text-muted mb-3">预计花费: <span id="power-cost" class="text-accent">$' + Economy.formatMoney(initCost) + '</span></div>';
     html += '<div class="flex gap-2 justify-end">' +
       '<button id="confirm-power" class="modal-btn primary">确认扩容</button>' +
       '</div>';
@@ -1125,6 +1148,7 @@ const UI = {
       document.getElementById('power-cost').textContent = '$' + Economy.formatMoney(mw * baseCost);
     };
     document.getElementById('power-mw').addEventListener('input', updateCost);
+    updateCost();
     document.getElementById('confirm-power').addEventListener('click', () => {
       const mw = parseInt(document.getElementById('power-mw').value) || 0;
       if (mw <= 0) return;
@@ -1144,7 +1168,8 @@ const UI = {
       '<input id="cooling-mw" type="number" class="modal-input w-24" value="2" min="1" max="100">' +
       '<span class="text-xs text-muted">MW</span>' +
       '</div>';
-    html += '<div class="text-xs text-muted mb-3">预计花费: <span id="cooling-cost" class="text-accent">$40M</span></div>';
+    const initCost = 2 * baseCost;
+    html += '<div class="text-xs text-muted mb-3">预计花费: <span id="cooling-cost" class="text-accent">$' + Economy.formatMoney(initCost) + '</span></div>';
     html += '<div class="flex gap-2 justify-end">' +
       '<button id="confirm-cooling" class="modal-btn primary">确认扩容</button>' +
       '</div>';
@@ -1159,6 +1184,7 @@ const UI = {
       document.getElementById('cooling-cost').textContent = '$' + Economy.formatMoney(mw * baseCost);
     };
     document.getElementById('cooling-mw').addEventListener('input', updateCost);
+    updateCost();
     document.getElementById('confirm-cooling').addEventListener('click', () => {
       const mw = parseInt(document.getElementById('cooling-mw').value) || 0;
       if (mw <= 0) return;
@@ -1228,113 +1254,68 @@ const UI = {
     html += '<div class="progress-bar mt-2"><div class="progress-fill" style="width:' + (effectiveQuality * 100) + '%;background:' + qualityColor + '"></div></div>';
     html += '</div>';
 
-    // 数据源列表（按分类分组，组内按质量从低到高排序）
-    html += '<div class="text-xs text-muted uppercase mb-1">数据源 (点击选择，按分类分组)</div>';
-    const selectedSrc = UI._selectedDataSource || 'web_crawl';
+    // 数据源列表（按分类分组，组内按质量从低到高排序；每个来源内嵌数量输入与采集按钮）
+    html += '<div class="text-xs text-muted uppercase mb-1">数据源 (在框内输入数量后点击采集)</div>';
     for (const category of CONFIG.DATA_SOURCE_CATEGORIES) {
       const catSources = Object.entries(CONFIG.DATA_SOURCES)
         .filter(([, src]) => src.category === category)
         .sort((a, b) => a[1].qualityBase - b[1].qualityBase);
       if (catSources.length === 0) continue;
       html += '<div class="text-xs font-bold text-accent mb-1 mt-2">▍' + category + '</div>';
-      html += '<div class="grid grid-cols-2 gap-2 mb-2">';
+      html += '<div class="grid grid-cols-1 gap-2 mb-2">';
       for (const [key, src] of catSources) {
         const current = DataCollection.state.sources[key] || 0;
         // 统一质量颜色阈值
         const qColor = src.qualityBase >= 0.85 ? '#00cc66' : src.qualityBase >= 0.75 ? '#e6a817' : src.qualityBase >= 0.60 ? '#e8a838' : '#e74c3c';
-        const hasData = current > 0;
-        const isSelected = key === selectedSrc;
-        // 选中状态: 亮绿边框+高亮背景; 已采集: 绿边框+淡绿背景; 默认: 灰边框
-        let borderColor, bgColor;
-        if (isSelected) {
-          borderColor = '#00ff88';
-          bgColor = 'rgba(0,255,136,0.15)';
-        } else if (hasData) {
-          borderColor = '#00cc66';
-          bgColor = 'rgba(0,204,102,0.05)';
-        } else {
-          borderColor = '#333';
-          bgColor = 'transparent';
-        }
-        html += '<div class="data-source-option p-2 border rounded cursor-pointer text-xs" style="border-color:' + borderColor + ';background:' + bgColor + ';border-width:2px" data-source="' + key + '">' +
+        html += '<div class="data-source-card p-2 border rounded text-xs" style="border-color:#333;background:transparent;border-width:2px" data-source="' + key + '">' +
           '<div class="flex justify-between items-center"><span class="font-bold">' + src.name + '</span>' +
           '<span style="font-size:10px;padding:1px 6px;border:1px solid ' + qColor + ';color:' + qColor + ';border-radius:3px">' + (src.qualityBase >= 0.85 ? '高质量' : src.qualityBase >= 0.70 ? '中质量' : '低质量') + '</span></div>' +
           '<div class="text-muted mt-0.5">' + src.desc + '</div>' +
           '<div class="flex justify-between mt-1">' +
           '<span style="color:' + qColor + '">质量 ' + (src.qualityBase * 100).toFixed(0) + '%</span>' +
           '<span class="text-muted">$' + Economy.formatMoney(src.cost) + '/10B</span>' +
+          (current > 0 ? '<span class="font-mono" style="color:#00cc66">已采: ' + current + 'B</span>' : '') +
           '</div>' +
-          (hasData ? '<div class="mt-0.5 font-mono" style="color:#00cc66">已采: ' + current + 'B</div>' : '') +
+          '<div class="flex items-center gap-2 mt-2">' +
+          '<input type="number" class="modal-input w-20 data-src-qty" data-source="' + key + '" value="10" min="1" max="1000">' +
+          '<span class="text-muted">B</span>' +
+          '<span class="data-src-cost text-accent font-mono ml-auto">$' + Economy.formatMoney(src.cost) + '</span>' +
+          '<button type="button" class="modal-btn primary data-src-collect" data-source="' + key + '" style="padding:4px 12px">采集</button>' +
+          '</div>' +
           '</div>';
       }
       html += '</div>';
     }
 
-    // 采集数量
-    html += '<div class="flex items-center gap-2 mb-2">' +
-      '<span class="text-xs text-muted">采集数量:</span>' +
-      '<input id="data-tokens" type="number" class="modal-input w-24" value="10" min="1" max="100">' +
-      '<span class="text-xs text-muted">B tokens</span>' +
-      '</div>';
-    html += '<div class="text-xs text-muted mb-3">预计花费: <span id="data-cost" class="text-accent">$0</span></div>';
-
-    html += '<div class="flex gap-2 justify-end">' +
-      '<button id="confirm-collect" class="modal-btn primary">确认采集</button>' +
-      '</div>';
-
     return html;
   },
 
   bindCollectDataEvents() {
-    const updateCost = () => {
-      const tokensB = parseInt(document.getElementById('data-tokens').value) || 0;
-      const src = CONFIG.DATA_SOURCES[UI._selectedDataSource];
-      if (src) {
-        document.getElementById('data-cost').textContent = '$' + Economy.formatMoney(src.cost * (tokensB / 10));
-      }
-    };
-
-    const updateSelectionVisual = (selectedKey) => {
-      document.querySelectorAll('.data-source-option').forEach(el => {
-        const key = el.dataset.source;
-        const current = DataCollection.state.sources[key] || 0;
-        const hasData = current > 0;
-        const isSelected = key === selectedKey;
-        let borderColor, bgColor;
-        if (isSelected) {
-          borderColor = '#00ff88';
-          bgColor = 'rgba(0,255,136,0.15)';
-        } else if (hasData) {
-          borderColor = '#00cc66';
-          bgColor = 'rgba(0,204,102,0.05)';
-        } else {
-          borderColor = '#333';
-          bgColor = 'transparent';
-        }
-        el.style.borderColor = borderColor;
-        el.style.backgroundColor = bgColor;
-      });
-    };
-
-    document.querySelectorAll('.data-source-option').forEach(el => {
-      el.addEventListener('click', () => {
-        UI._selectedDataSource = el.dataset.source;
-        updateSelectionVisual(UI._selectedDataSource);
-        updateCost();
+    document.querySelectorAll('.data-src-qty').forEach(input => {
+      const key = input.dataset.source;
+      const src = CONFIG.DATA_SOURCES[key];
+      const card = input.closest('.data-source-card');
+      const costEl = card.querySelector('.data-src-cost');
+      input.addEventListener('input', () => {
+        const tokensB = parseInt(input.value) || 0;
+        costEl.textContent = '$' + Economy.formatMoney(src.cost * (tokensB / 10));
       });
     });
-    updateSelectionVisual(UI._selectedDataSource);
 
-    document.getElementById('data-tokens').addEventListener('input', updateCost);
-    updateCost();
-
-    document.getElementById('confirm-collect').addEventListener('click', () => {
-      const tokensB = parseInt(document.getElementById('data-tokens').value) || 0;
-      if (tokensB <= 0) return;
-      DataCollection.buySource(UI._selectedDataSource, tokensB);
-      // 刷新模态框（保留选中的数据源）
-      document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
-      UI.bindCollectDataEvents();
+    document.querySelectorAll('.data-src-collect').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.source;
+        const card = btn.closest('.data-source-card');
+        const input = card.querySelector('.data-src-qty');
+        const tokensB = parseInt(input.value) || 0;
+        if (tokensB <= 0) return;
+        const ok = DataCollection.buySource(key, tokensB);
+        if (ok) {
+          // 采集成功后刷新模态框（不高亮任何选项）
+          document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
+          UI.bindCollectDataEvents();
+        }
+      });
     });
   },
 
@@ -1388,6 +1369,7 @@ const UI = {
       '</div>' +
       '</div>' +
       '<div class="text-xs text-muted mt-2 text-center">训练预估功耗: <span id="train-power-estimate" class="font-mono text-amber">0.0</span> MW</div>' +
+      '<div class="text-xs text-muted mt-1 text-center">预计训练时长: <span id="train-days-estimate" class="font-mono text-accent">--</span> 天</div>' +
       '</div>';
 
     // GPU 分配（按型号选择，最少需求按算力折算）
@@ -1512,6 +1494,21 @@ const UI = {
       
       const estPower = totalPower * 0.95 * (1 + CONFIG.COOLING_RATIO);
       document.getElementById('train-power-estimate').textContent = estPower.toFixed(2);
+
+      // 预计训练时长（与 training.js 公式一致）
+      const daysEl = document.getElementById('train-days-estimate');
+      if (daysEl) {
+        if (totalTFLOPS > 0) {
+          const tokens = selectedParams * CONFIG.CHINCHILLA_RATIO;
+          const logFlops = Math.log10(6) + Math.log10(selectedParams) + Math.log10(tokens);
+          const efficiency = CONFIG.BASE_EFFICIENCY * Game.getEffMultiplier();
+          const logDays = logFlops - (Math.log10(totalTFLOPS) + 12 + Math.log10(efficiency) + Math.log10(CONFIG.SECONDS_PER_DAY));
+          const estDays = Math.max(1, Math.ceil(Math.pow(10, logDays)));
+          daysEl.textContent = String(estDays);
+        } else {
+          daysEl.textContent = '--';
+        }
+      }
     };
 
     // 根据当前单位更新输入框范围提示和min/max属性

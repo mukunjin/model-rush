@@ -230,25 +230,33 @@ const CONFIG = {
   ],
 
   // 数据采集：每个分类下包含不同质量等级的来源（互联网内容不等于低质量）
+  // 质量覆盖 0.40 ~ 0.95，价格与质量正相关
   DATA_SOURCE_CATEGORIES: ['通用', '知识', '编程', '推理', '多语言'],
   DATA_SOURCES: {
     // 通用类：低 → 高
     web_crawl:     { name: '网页爬取', desc: '互联网公开文本，量大但质量参差不齐', cost: 5_000_000, qualityBase: 0.55, tokens: 500e9, category: '通用' },
+    forum_posts:   { name: '论坛帖子', desc: '贴吧/Reddit等社区讨论，口语化内容', cost: 4_000_000, qualityBase: 0.45, tokens: 300e9, category: '通用' },
     web_curated:   { name: '精选网页', desc: '经人工筛选的高质量网页内容', cost: 12_000_000, qualityBase: 0.75, tokens: 200e9, category: '通用' },
+    news_corpus:   { name: '新闻语料', desc: '主流媒体新闻报道，事实性强', cost: 15_000_000, qualityBase: 0.80, tokens: 120e9, category: '通用' },
     encyclopedia:  { name: '百科知识库', desc: '结构化百科与知识条目，准确可靠', cost: 18_000_000, qualityBase: 0.85, tokens: 80e9, category: '通用' },
-    synthetic:     { name: '合成数据', desc: '用现有模型生成的高质量训练数据', cost: 30_000_000, qualityBase: 0.80, tokens: 200e9, category: '通用' },
+    synthetic:     { name: '合成数据', desc: '用现有模型生成的高质量训练数据', cost: 30_000_000, qualityBase: 0.90, tokens: 200e9, category: '通用' },
     // 知识类
     blogs:         { name: '专业博客', desc: '领域专家撰写的深度文章', cost: 10_000_000, qualityBase: 0.70, tokens: 120e9, category: '知识' },
+    textbooks:     { name: '教材语料', desc: '大学教材与教辅，体系化知识', cost: 20_000_000, qualityBase: 0.88, tokens: 50e9, category: '知识' },
     books:         { name: '书籍语料', desc: '高质量出版书籍，文学与知识类', cost: 15_000_000, qualityBase: 0.85, tokens: 100e9, category: '知识' },
     // 编程类
     code_snippets: { name: '代码片段', desc: '网络收集的代码示例，质量不一', cost: 8_000_000, qualityBase: 0.60, tokens: 100e9, category: '编程' },
     code_repos:    { name: '开源代码仓库', desc: 'GitHub高质量开源项目代码', cost: 20_000_000, qualityBase: 0.85, tokens: 150e9, category: '编程' },
+    code_docs:     { name: '代码文档与注释', desc: 'API文档、技术文档，规范严谨', cost: 22_000_000, qualityBase: 0.90, tokens: 40e9, category: '编程' },
     // 推理类
+    math_problems: { name: '数学题库', desc: '竞赛与考试数学题，含解题步骤', cost: 16_000_000, qualityBase: 0.82, tokens: 20e9, category: '推理' },
     qa_community:  { name: '问答社区', desc: 'Stack Overflow等问答，含推理过程', cost: 12_000_000, qualityBase: 0.70, tokens: 60e9, category: '推理' },
-    academic:      { name: '学术论文', desc: 'arXiv等学术论文，提升推理能力', cost: 25_000_000, qualityBase: 0.90, tokens: 30e9, category: '推理' },
+    academic:      { name: '学术论文', desc: 'arXiv等学术论文，提升推理能力', cost: 25_000_000, qualityBase: 0.92, tokens: 30e9, category: '推理' },
     // 多语言类
-    web_multilingual: { name: '多语言网页', desc: '互联网多语言文本，覆盖面广', cost: 6_000_000, qualityBase: 0.55, tokens: 250e9, category: '多语言' },
-    multilingual:  { name: '多语言精选语料', desc: '中英日韩等精选高质量文本', cost: 14_000_000, qualityBase: 0.80, tokens: 100e9, category: '多语言' }
+    web_multilingual: { name: '多语言网页', desc: '互联网多语言文本，覆盖面广', cost: 6_000_000, qualityBase: 0.50, tokens: 250e9, category: '多语言' },
+    subtitles:     { name: '影视字幕', desc: '多语言影视字幕，对齐翻译', cost: 9_000_000, qualityBase: 0.65, tokens: 80e9, category: '多语言' },
+    multilingual:  { name: '多语言精选语料', desc: '中英日韩等精选高质量文本', cost: 14_000_000, qualityBase: 0.80, tokens: 100e9, category: '多语言' },
+    translation_pairs: { name: '翻译对照语料', desc: '专业翻译对齐数据，质量最高', cost: 28_000_000, qualityBase: 0.95, tokens: 20e9, category: '多语言' }
   },
 
   // 事件触发间隔
