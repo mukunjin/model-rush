@@ -7,7 +7,7 @@ const UI = {
   tutorialPreviousSpeed: null,
   tutorialSteps: [
     { title: '欢迎来到 Model Rush', tab: 'finance', text: '引导期间游戏已经暂停。你可以一边阅读，一边直接操作页面；完成当前动作后再点“下一步”。' },
-    { title: '第一步：采集数据', tab: 'finance', text: '现在点击底栏“采集数据”。在数据来源卡片里输入数量并点击“采集”，至少收集 10B tokens 才能开始训练；不同来源的质量会影响模型能力。' },
+    { title: '第一步：采集数据', tab: 'finance', text: '现在点击底栏“采集数据”。先点击一个数据类别（如“通用”）进入，再在数据来源卡片里输入数量并点击“采集”，至少收集 10B tokens 才能开始训练；不同来源的质量会影响模型能力。' },
     { title: '第二步：购买GPU', tab: 'inventory', text: '现在从“GPU 管理”购买 GPU。库存页会显示训练、推理与闲置 GPU；购买前请预留机架位、供电和冷却。' },
     { title: '第三步：招聘研究员', tab: 'finance', text: '现在从“团队 → 聘请研究员”招聘研究员，他们能提升训练效率。注意：高级研究员需要公司市值达到一定规模才会解锁。' },
     { title: '第四步：研发技术', tab: 'research', text: '现在从“团队 → 研发技术”选择一项开始研发。研发需要时间推进，所以从这一步起游戏恢复 1X 速度运行。' },
@@ -644,9 +644,10 @@ const UI = {
       case 'expand-power': html = UI.buildExpandPowerModal(); break;
       case 'expand-cooling': html = UI.buildExpandCoolingModal(); break;
       case 'expand-datacenter': html = UI.buildExpandDatacenterModal(); break;
-      case 'collect-data': html = UI.buildCollectDataModal(); break;
+      case 'collect-data': UI._dataCategory = null; html = UI.buildCollectDataModal(); break;
       case 'new-training': html = UI.buildTrainingModal(); break;
       case 'hire-researcher': html = UI.buildHireResearcherModal(); break;
+      case 'layoff-researcher': html = UI.buildLayoffResearcherModal(); break;
       case 'research': html = UI.buildResearchModal(); break;
     }
 
@@ -663,6 +664,7 @@ const UI = {
     else if (type === 'collect-data') UI.bindCollectDataEvents();
     else if (type === 'new-training') UI.bindTrainingEvents();
     else if (type === 'hire-researcher') UI.bindHireResearcherEvents();
+    else if (type === 'layoff-researcher') UI.bindLayoffResearcherEvents();
     else if (type === 'research') UI.bindResearchEvents();
   },
 
@@ -1316,6 +1318,7 @@ const UI = {
 
   // === 数据采集模态框 ===
   _selectedDataSource: 'web_crawl',
+  _dataCategory: null, // 当前查看的数据类别（null = 显示类别总览）
 
   buildCollectDataModal() {
     const stats = DataCollection.getStats();
@@ -1338,43 +1341,104 @@ const UI = {
     html += '<div class="progress-bar mt-2"><div class="progress-fill" style="width:' + (effectiveQuality * 100) + '%;background:' + qualityColor + '"></div></div>';
     html += '</div>';
 
-    // 数据源列表（按分类分组，组内按质量从低到高排序；每个来源内嵌数量输入与采集按钮）
-    html += '<div class="text-xs text-muted uppercase mb-1">数据源 (在框内输入数量后点击采集)</div>';
-    for (const category of CONFIG.DATA_SOURCE_CATEGORIES) {
-      const catSources = Object.entries(CONFIG.DATA_SOURCES)
-        .filter(([, src]) => src.category === category)
-        .sort((a, b) => a[1].qualityBase - b[1].qualityBase);
-      if (catSources.length === 0) continue;
-      html += '<div class="text-xs font-bold text-accent mb-1 mt-2">▍' + category + '</div>';
-      html += '<div class="grid grid-cols-1 gap-2 mb-2">';
-      for (const [key, src] of catSources) {
-        const current = DataCollection.state.sources[key] || 0;
-        // 统一质量颜色阈值
-        const qColor = src.qualityBase >= 0.85 ? '#00cc66' : src.qualityBase >= 0.75 ? '#e6a817' : src.qualityBase >= 0.60 ? '#e8a838' : '#e74c3c';
-        html += '<div class="data-source-card p-2 border rounded text-xs" style="border-color:#333;background:transparent;border-width:2px" data-source="' + key + '">' +
-          '<div class="flex justify-between items-center"><span class="font-bold">' + src.name + '</span>' +
-          '<span style="font-size:10px;padding:1px 6px;border:1px solid ' + qColor + ';color:' + qColor + ';border-radius:3px">' + (src.qualityBase >= 0.85 ? '高质量' : src.qualityBase >= 0.70 ? '中质量' : '低质量') + '</span></div>' +
-          '<div class="text-muted mt-0.5">' + src.desc + '</div>' +
-          '<div class="flex justify-between mt-1">' +
-          '<span style="color:' + qColor + '">质量 ' + (src.qualityBase * 100).toFixed(0) + '%</span>' +
-          '<span class="text-muted">$' + Economy.formatMoney(src.cost) + '/10B</span>' +
-          (current > 0 ? '<span class="font-mono" style="color:#00cc66">已采: ' + current + 'B</span>' : '') +
-          '</div>' +
-          '<div class="flex items-center gap-2 mt-2">' +
-          '<input type="number" class="modal-input w-20 data-src-qty" data-source="' + key + '" value="10" min="1" max="1000">' +
-          '<span class="text-muted">B</span>' +
-          '<span class="data-src-cost text-accent font-mono ml-auto">$' + Economy.formatMoney(src.cost) + '</span>' +
-          '<button type="button" class="modal-btn primary data-src-collect" data-source="' + key + '" style="padding:4px 12px">采集</button>' +
-          '</div>' +
-          '</div>';
-      }
-      html += '</div>';
+    // 分类导航：先展示类别总览，点击类别进入该类别查看不同质量的数据源
+    if (UI._dataCategory) {
+      html += UI.buildDataCategoryDetail(UI._dataCategory);
+    } else {
+      html += UI.buildDataCategoryList();
     }
 
     return html;
   },
 
+  // 类别总览：展示各数据类别卡片，点击进入
+  buildDataCategoryList() {
+    let html = '<div class="text-xs text-muted uppercase mb-2">数据类别 (点击进入，查看不同质量的数据源)</div>';
+    html += '<div class="grid grid-cols-2 gap-2">';
+    for (const category of CONFIG.DATA_SOURCE_CATEGORIES) {
+      const catSources = Object.entries(CONFIG.DATA_SOURCES)
+        .filter(([, src]) => src.category === category)
+        .sort((a, b) => a[1].qualityBase - b[1].qualityBase);
+      if (catSources.length === 0) continue;
+
+      // 该类别已采集 tokens
+      let catTokens = 0;
+      for (const [key] of catSources) {
+        catTokens += DataCollection.state.sources[key] || 0;
+      }
+      // 质量范围（该类别内最低 ~ 最高）
+      const qMin = Math.min(...catSources.map(([, s]) => s.qualityBase));
+      const qMax = Math.max(...catSources.map(([, s]) => s.qualityBase));
+      const qColor = qMax >= 0.85 ? '#00cc66' : qMax >= 0.75 ? '#e6a817' : qMax >= 0.60 ? '#e8a838' : '#e74c3c';
+
+      html += '<div class="data-category-card p-3 border border-border rounded cursor-pointer hover:border-accent transition-colors" data-category="' + category + '">' +
+        '<div class="font-bold text-sm text-accent">' + category + '</div>' +
+        '<div class="text-xs text-muted mt-0.5">' + catSources.length + ' 个数据源</div>' +
+        '<div class="text-xs mt-0.5" style="color:' + qColor + '">质量 ' + (qMin * 100).toFixed(0) + '% ~ ' + (qMax * 100).toFixed(0) + '%</div>' +
+        (catTokens > 0 ? '<div class="text-xs font-mono mt-0.5" style="color:#00cc66">已采: ' + catTokens + 'B</div>' : '') +
+        '</div>';
+    }
+    html += '</div>';
+    return html;
+  },
+
+  // 类别详情：展示该类别下不同质量等级的数据源（输入数量后点击采集）
+  buildDataCategoryDetail(category) {
+    const catSources = Object.entries(CONFIG.DATA_SOURCES)
+      .filter(([, src]) => src.category === category)
+      .sort((a, b) => a[1].qualityBase - b[1].qualityBase);
+
+    let html = '<div class="flex items-center justify-between mb-2">' +
+      '<div class="text-sm font-bold text-accent">' + category + '</div>' +
+      '<button type="button" id="data-back-btn" class="modal-btn" style="padding:4px 10px">← 返回类别</button>' +
+      '</div>';
+    html += '<div class="text-xs text-muted mb-2">该类别下可按质量选择数据源，质量越高训练效果越好，成本也越高。</div>';
+    html += '<div class="grid grid-cols-1 gap-2">';
+    for (const [key, src] of catSources) {
+      const current = DataCollection.state.sources[key] || 0;
+      // 统一质量颜色阈值
+      const qColor = src.qualityBase >= 0.85 ? '#00cc66' : src.qualityBase >= 0.75 ? '#e6a817' : src.qualityBase >= 0.60 ? '#e8a838' : '#e74c3c';
+      html += '<div class="data-source-card p-2 border rounded text-xs" style="border-color:#333;background:transparent;border-width:2px" data-source="' + key + '">' +
+        '<div class="flex justify-between items-center"><span class="font-bold">' + src.name + '</span>' +
+        '<span style="font-size:10px;padding:1px 6px;border:1px solid ' + qColor + ';color:' + qColor + ';border-radius:3px">' + (src.qualityBase >= 0.85 ? '高质量' : src.qualityBase >= 0.70 ? '中质量' : '低质量') + '</span></div>' +
+        '<div class="text-muted mt-0.5">' + src.desc + '</div>' +
+        '<div class="flex justify-between mt-1">' +
+        '<span style="color:' + qColor + '">质量 ' + (src.qualityBase * 100).toFixed(0) + '%</span>' +
+        '<span class="text-muted">$' + Economy.formatMoney(src.cost) + '/10B</span>' +
+        (current > 0 ? '<span class="font-mono" style="color:#00cc66">已采: ' + current + 'B</span>' : '') +
+        '</div>' +
+        '<div class="flex items-center gap-2 mt-2">' +
+        '<input type="number" class="modal-input w-20 data-src-qty" data-source="' + key + '" value="10" min="1" max="1000">' +
+        '<span class="text-muted">B</span>' +
+        '<span class="data-src-cost text-accent font-mono ml-auto">$' + Economy.formatMoney(src.cost) + '</span>' +
+        '<button type="button" class="modal-btn primary data-src-collect" data-source="' + key + '" style="padding:4px 12px">采集</button>' +
+        '</div>' +
+        '</div>';
+    }
+    html += '</div>';
+    return html;
+  },
+
   bindCollectDataEvents() {
+    // 类别卡片：点击进入该类别
+    document.querySelectorAll('.data-category-card').forEach(card => {
+      card.addEventListener('click', () => {
+        UI._dataCategory = card.dataset.category;
+        document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
+        UI.bindCollectDataEvents();
+      });
+    });
+
+    // 返回按钮：回到类别总览
+    const backBtn = document.getElementById('data-back-btn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        UI._dataCategory = null;
+        document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
+        UI.bindCollectDataEvents();
+      });
+    }
+
     document.querySelectorAll('.data-src-qty').forEach(input => {
       const key = input.dataset.source;
       const src = CONFIG.DATA_SOURCES[key];
@@ -1395,7 +1459,7 @@ const UI = {
         if (tokensB <= 0) return;
         const ok = DataCollection.buySource(key, tokensB);
         if (ok) {
-          // 采集成功后刷新模态框（不高亮任何选项）
+          // 采集成功后刷新模态框（保持当前分类，不高亮任何选项）
           document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
           UI.bindCollectDataEvents();
         }
@@ -1795,6 +1859,49 @@ const UI = {
         Economy.hireResearcher(tier);
         document.getElementById('modal-content').innerHTML = UI.buildHireResearcherModal();
         UI.bindHireResearcherEvents();
+      });
+    });
+  },
+
+  // === 裁员模态框 ===
+  buildLayoffResearcherModal() {
+    const s = Game.state;
+    const r = s.researchers;
+    let html = '<h2 class="text-lg font-bold text-danger mb-3">裁员</h2>';
+    html += '<p class="text-xs text-muted mb-3">辞退研究员可立即降低每月薪资支出（从最近聘请、薪资最高的一位开始裁）。裁员会失去其训练效率加成，且不可撤销。</p>';
+
+    for (const [key, tier] of Object.entries(CONFIG.RESEARCHER_TIERS)) {
+      const count = r[key] || 0;
+      const lockClass = count <= 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-danger';
+      const savedSalary = count > 0 ? Math.ceil(tier.baseSalary * Math.pow(CONFIG.RESEARCHER_PRICE_MULTIPLIER, count - 1)) : 0;
+      html += '<div class="researcher-tier p-3 border border-border rounded mb-2 ' + lockClass + '" data-tier="' + key + '" data-count="' + count + '">' +
+        '<div class="flex justify-between items-center">' +
+        '<span class="font-bold text-sm">' + tier.name + '</span>' +
+        '<span class="text-xs text-muted">当前: ' + count + ' 人</span>' +
+        '</div>' +
+        '<div class="text-xs text-muted mt-1">' + tier.desc + '</div>' +
+        '<div class="text-xs mt-1">' +
+        '<span class="tag tag-red">训练效率 -' + (tier.effBonus * 100).toFixed(0) + '%</span>' +
+        (count > 0 ? '<span class="text-muted ml-2">裁 1 人节省月薪: <span class="text-danger font-mono">$' + Economy.formatMoney(savedSalary) + '</span></span>' : '') +
+        '</div>' +
+        '</div>';
+    }
+
+    return html;
+  },
+
+  bindLayoffResearcherEvents() {
+    document.querySelectorAll('.researcher-tier').forEach(el => {
+      const count = parseInt(el.dataset.count) || 0;
+      if (count <= 0) return;
+      el.addEventListener('click', () => {
+        const tier = el.dataset.tier;
+        const tierConfig = CONFIG.RESEARCHER_TIERS[tier];
+        UI.showConfirmModal('裁员确认', '确定要辞退 1 名' + tierConfig.name + ' 吗？将失去其训练效率加成，此操作不可撤销。', () => {
+          Economy.layoffResearcher(tier);
+          // 重新打开裁员模态框，展示最新状态
+          UI.showModal('layoff-researcher');
+        }, '确认裁员');
       });
     });
   },

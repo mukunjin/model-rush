@@ -275,6 +275,26 @@ const Economy = {
     return true;
   },
 
+  // 裁员：辞退指定级别最近聘请的一位研究员（薪资最高的一位），立即降低每月薪资支出。
+  layoffResearcher(tier) {
+    const s = Game.state;
+    const tierConfig = CONFIG.RESEARCHER_TIERS[tier];
+    if (!tierConfig) return false;
+
+    const currentCount = s.researchers[tier] || 0;
+    if (currentCount <= 0) {
+      UI.toast('该级别没有研究员可裁减');
+      return false;
+    }
+
+    // 按聘请顺序，最后一位薪资最高，裁掉它节省最多
+    const savedSalary = Math.ceil(tierConfig.baseSalary * Math.pow(CONFIG.RESEARCHER_PRICE_MULTIPLIER, currentCount - 1));
+    s.researchers[tier]--;
+    Game.addLog('裁员: 辞退' + tierConfig.name + ' 1人，节省月薪 $' + Economy.formatMoney(savedSalary));
+    UI.update();
+    return true;
+  },
+
   getTotalResearchers() {
     const r = Game.state.researchers;
     return r.junior + r.senior + r.principal;
